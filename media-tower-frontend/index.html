@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- Titre mis à jour pour votre application -->
+  <title>Media Tower</title>
+
+  <!-- Vous pouvez ajouter ici le script de votre service de chat (Crisp, etc.) si vous en utilisez un -->
+
+</head>
+<body>
+<div id="root"></div>
+
+<!--
+  LA CORRECTION EST ICI.
+  Cette ligne est nécessaire pour corriger une incompatibilité entre la librairie
+  SockJS (utilisée pour les WebSockets) et l'environnement de Vite.
+  Elle définit la variable 'global' que SockJS attend.
+-->
+<script>var global = window;</script>
+
+<!-- Script principal de votre application React -->
+<script type="module" src="/src/main.tsx"></script>
+</body>
+</html>

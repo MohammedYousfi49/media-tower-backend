@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Your Service Booking is Underway!</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol'; background-color: #f2f4f6;">
+<table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+    <tr>
+        <td align="center" style="padding: 20px 0;">
+            <!-- ====================================================================== -->
+            <!-- == LOGO DE VOTRE ENTREPRISE == -->
+            <!-- ====================================================================== -->
+            <img src="https://i.imgur.com/ImllzTR.png" alt="MediaTower Logo" width="150" style="display: block;">
+        </td>
+    </tr>
+    <tr>
+        <td align="center" style="padding: 0 15px;">
+            <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 600px; border-collapse: collapse; background-color: #ffffff; border: 1px solid #e8e5ef; border-radius: 8px;">
+                <!-- Header Section -->
+                <tr>
+                    <td style="padding: 40px 30px 30px 30px; text-align: center;">
+                        <h1 style="font-size: 24px; font-weight: bold; color: #2d3748; margin: 0;">We've started working on your service!</h1>
+                        <p style="font-size: 16px; color: #718096; margin-top: 10px;">
+                            Hi <strong th:text="${customerName}">Customer</strong>, thank you for your payment. Your booking is now confirmed and in progress.
+                        </p>
+                    </td>
+                </tr>
+                <!-- Service Details Section -->
+                <tr>
+                    <td style="padding: 0 30px;">
+                        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="border-top: 1px solid #e8e5ef; border-bottom: 1px solid #e8e5ef; padding: 20px 0;">
+                            <tr>
+                                <td>
+                                    <p style="font-size: 14px; color: #718096; margin: 0;">SERVICE BOOKING</p>
+                                    <p style="font-size: 16px; font-weight: 600; color: #2d3748; margin: 5px 0 0 0;" th:text="${serviceName}">Service Name</p>
+                                </td>
+                                <td style="text-align: right;">
+                                    <p style="font-size: 14px; color: #718096; margin: 0;">BOOKING REF</p>
+                                    <p style="font-size: 16px; font-weight: 600; color: #2d3748; margin: 5px 0 0 0;" th:text="${bookingId}">#000</p>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+                <!-- Next Steps Section -->
+                <tr>
+                    <td style="padding: 30px 30px;">
+                        <h2 style="font-size: 18px; font-weight: bold; color: #2d3748; margin: 0;">What happens next?</h2>
+                        <p style="font-size: 16px; color: #718096; margin-top: 15px; line-height: 1.5;">
+                            Our team is now actively working on your request. We will contact you shortly if we need any more information. You can track the status of your service at any time in your account.
+                        </p>
+                    </td>
+                </tr>
+                <!-- Call to Action Button -->
+                <tr>
+                    <td align="center" style="padding: 10px 30px 40px 30px;">
+                        <a th:href="${accountUrl}" target="_blank" style="display: inline-block; padding: 16px 36px; font-size: 16px; font-weight: 600; color: #ffffff; text-decoration: none; background-color: #48bb78; border-radius: 6px;">
+                            View My Services
+                        </a>
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+    <!-- Footer Section -->
+    <tr>
+        <td align="center" style="padding: 30px;">
+            <p style="font-size: 14px; color: #a0aec0; margin: 0 0 15px 0;">Follow us on social media!</p>
+            <div>
+                <!-- ====================================================================== -->
+                <!-- == LIENS SOCIAUX : Remplacez '#' par les URL de vos pages == -->
+                <!-- ====================================================================== -->
+                <a href="#" target="_blank" style="text-decoration: none; margin: 0 10px;">
+                    <img src="https://img.icons8.com/ios-filled/50/a0aec0/facebook-new.png" alt="Facebook" width="24" />
+                </a>
+                <a href="#" target="_blank" style="text-decoration: none; margin: 0 10px;">
+                    <img src="https://img.icons8.com/ios-filled/50/a0aec0/twitter.png" alt="Twitter" width="24" />
+                </a>
+                <a href="#" target="_blank" style="text-decoration: none; margin: 0 10px;">
+                    <img src="https://img.icons8.com/ios-filled/50/a0aec0/instagram-new.png" alt="Instagram" width="24" />
+                </a>
+            </div>
+            <p style="font-size: 12px; color: #a0aec0; margin: 20px 0 0 0;">
+                &copy; 2025 MediaTower. All rights reserved.<br>
+                123 Digital Street, Casablanca, Morocco
+            </p>
+        </td>
+    </tr>
+</table>
+</body>
+</html>

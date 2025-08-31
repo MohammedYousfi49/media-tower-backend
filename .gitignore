@@ -1,0 +1,10 @@
+# Ignorer les fichiers sensibles
+src/main/resources/serviceAccountKey.json
+src/main/resources/application.properties
+
+# Autres fichiers à ignorer si tu veux
+.idea/
+*.iml
+*.log
+*.class
+target/
