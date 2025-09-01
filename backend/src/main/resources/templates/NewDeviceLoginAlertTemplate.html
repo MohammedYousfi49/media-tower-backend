@@ -1,10 +1,40 @@
 <!DOCTYPE html>
-<html lang="en">
+<html xmlns:th="http://www.thymeleaf.org">
 <head>
-  <meta charset="UTF-8">
-  <title>$Title$</title>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 5px; }
+        .header { background-color: #f8f8f8; padding: 10px; text-align: center; border-bottom: 1px solid #ddd; }
+        .content { padding: 20px 0; }
+        .details { background-color: #f2f2f2; padding: 15px; border-radius: 4px; }
+        .footer { margin-top: 20px; font-size: 0.8em; text-align: center; color: #888; }
+    </style>
 </head>
 <body>
-$END$
+<div class="container">
+    <div class="header">
+        <h2>MediaTower - Alerte de Sécurité</h2>
+    </div>
+    <div class="content">
+        <h3>Bonjour <span th:text="${userName}">Utilisateur</span>,</h3>
+        <p>Nous avons détecté une nouvelle connexion à votre compte. Voici les détails :</p>
+        <div class="details">
+            <strong>Date et Heure :</strong> <span th:text="${loginTime}"></span><br>
+            <strong>Adresse IP :</strong> <span th:text="${ipAddress}"></span><br>
+            <strong>Appareil / Navigateur :</strong> <span th:text="${userAgent}"></span>
+        </div>
+        <p>
+            Si cette connexion vous semble familière, vous pouvez ignorer cet e-mail en toute sécurité.
+        </p>
+        <p>
+            <b>Si vous ne reconnaissez pas cette activité</b>, nous vous recommandons de <a href="http://localhost:5174/forgot-password">réinitialiser votre mot de passe</a> immédiatement et de vérifier l'activité de votre compte.
+        </p>
+        <p>Merci,<br>L'équipe de sécurité de MediaTower</p>
+    </div>
+    <div class="footer">
+        <p>&copy; 2025 MediaTower. Tous droits réservés.</p>
+    </div>
+</div>
 </body>
 </html>

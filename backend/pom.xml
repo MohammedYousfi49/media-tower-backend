@@ -102,6 +102,11 @@
 			<artifactId>checkout-sdk</artifactId>
 			<version>2.0.0</version>
 		</dependency>
+        <dependency>
+            <groupId>org.apache.tika</groupId>
+            <artifactId>tika-core</artifactId>
+            <version>3.1.0</version> <!-- ou une version plus récente -->
+        </dependency>
 
 		<!-- Nos nouvelles dépendances -->
 		<dependency>

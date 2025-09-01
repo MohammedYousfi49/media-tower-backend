@@ -44,7 +44,7 @@ public class EmailService {
     }
 
     // --- E-MAILS HTML ---
-
+    @Async
     public void sendOrderConfirmationEmail(Order order) {
         logger.info("Preparing to send order confirmation email for order #{}", order.getId());
         try {
@@ -68,7 +68,7 @@ public class EmailService {
             logger.error("Failed to send order confirmation email for order #{}", order.getId(), e);
         }
     }
-
+    @Async
     public void sendServiceInProgressEmail(Booking booking) {
         logger.info("Preparing to send service in-progress email for booking #{}", booking.getId());
         try {
@@ -90,7 +90,7 @@ public class EmailService {
             logger.error("Failed to send service in-progress email for booking #{}", booking.getId(), e);
         }
     }
-
+    @Async
     public void sendServiceCancelledEmail(Booking booking) {
         logger.info("Preparing to send service cancellation email for booking #{}", booking.getId());
         try {
@@ -114,7 +114,7 @@ public class EmailService {
     }
 
     // --- E-MAILS TEXTE (AMÉLIORÉS) ---
-
+    @Async
     public void sendBookingRequestedEmail(String customerName, String customerEmail, String serviceName) {
         String subject = "We've received your request for: " + serviceName;
         String text = String.format(
@@ -126,7 +126,7 @@ public class EmailService {
         );
         sendSimpleTextEmail(customerEmail, subject, text);
     }
-
+    @Async
     public void sendBookingConfirmedEmail(String customerName, String customerEmail, String serviceName, Long bookingId) {
         String subject = "Your Booking for '" + serviceName + "' is Confirmed!";
         String text = String.format(
@@ -140,7 +140,7 @@ public class EmailService {
         );
         sendSimpleTextEmail(customerEmail, subject, text);
     }
-
+    @Async
     public void sendBookingCompletedEmail(String customerName, String customerEmail, String serviceName, Long bookingId, Long serviceId) {
         String subject = "Your service '" + serviceName + "' is complete!";
         String text = String.format(
@@ -155,7 +155,7 @@ public class EmailService {
         );
         sendSimpleTextEmail(customerEmail, subject, text);
     }
-
+    @Async
     public void sendBookingCancelledBySystemEmail(String customerName, String customerEmail, String serviceName, Long bookingId) {
         String subject = "Update on your booking #" + bookingId;
         String text = String.format(
@@ -170,7 +170,7 @@ public class EmailService {
     }
 
     // --- MÉTHODES UTILITAIRES POUR L'ENVOI ---
-
+    @Async
     private void sendHtmlEmail(String to, String subject, String htmlContent) throws MessagingException {
         MimeMessage mimeMessage = mailSender.createMimeMessage();
         MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, MimeMessageHelper.MULTIPART_MODE_MIXED_RELATED, StandardCharsets.UTF_8.name());
@@ -181,6 +181,7 @@ public class EmailService {
         mailSender.send(mimeMessage);
     }
 
+    @Async
     private void sendSimpleTextEmail(String to, String subject, String text) {
         SimpleMailMessage message = new SimpleMailMessage();
         message.setFrom(fromEmail);
@@ -208,6 +209,7 @@ public class EmailService {
     }
 
     // --- E-MAILS DE SUPPORT (INCHANGÉS POUR L'INSTANT) ---
+    @Async
     public void sendTicketReplyEmail(String userEmail, Long ticketId) {
         SimpleMailMessage message = new SimpleMailMessage();
         message.setFrom(fromEmail);
@@ -217,7 +219,7 @@ public class EmailService {
                 "http://localhost:5174/account/tickets/" + ticketId);
         mailSender.send(message);
     }
-
+    @Async
     public void sendTicketCreationConfirmationEmail(String userEmail, Long ticketId) {
         SimpleMailMessage message = new SimpleMailMessage();
         message.setFrom(fromEmail);
@@ -228,6 +230,7 @@ public class EmailService {
         mailSender.send(message);
     }
 
+    @Async
     public void sendTicketClosedEmail(String userEmail, Long ticketId) {
         SimpleMailMessage message = new SimpleMailMessage();
         message.setFrom(fromEmail);
@@ -268,6 +271,39 @@ public class EmailService {
             logger.info("Successfully sent password reset email to {}", to);
         } catch (Exception e) {
             logger.error("Failed to send password reset email to {}: {}", to, e.getMessage(), e);
+        }
+    }
+    /**
+     * NOUVELLE MÉTHODE : Envoie une alerte pour une nouvelle connexion.
+     * @param to L'email de l'utilisateur
+     * @param userName Le nom de l'utilisateur
+     * @param loginTime La date et l'heure de la connexion
+     * @param ipAddress L'adresse IP de la connexion
+     * @param userAgent Le navigateur/appareil utilisé
+     */
+    @Async // <-- Cette nouvelle méthode est aussi asynchrone
+    public void sendNewDeviceLoginAlertEmail(String to, String userName, String loginTime, String ipAddress, String userAgent) {
+        try {
+            Context context = new Context();
+            context.setVariable("userName", userName);
+            context.setVariable("loginTime", loginTime);
+            context.setVariable("ipAddress", ipAddress);
+            context.setVariable("userAgent", userAgent);
+
+            String htmlContent = templateEngine.process("NewDeviceLoginAlertTemplate", context);
+
+            MimeMessage mimeMessage = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, "UTF-8");
+
+            helper.setTo(to);
+            helper.setSubject("Alerte de Sécurité : Nouvelle connexion à votre compte MediaTower");
+            helper.setText(htmlContent, true); // true pour indiquer que c'est du HTML
+
+            mailSender.send(mimeMessage);
+
+        } catch (MessagingException e) {
+            // Gérer l'erreur, par exemple avec un logger
+            // logger.error("Failed to send new device login alert email to {}", to, e);
         }
     }
 

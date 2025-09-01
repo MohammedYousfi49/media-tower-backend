@@ -19,4 +19,5 @@ public class UserProfileDto {
     private String address;
     private boolean emailVerified;
     private boolean mfaEnabled;
+    private String profileImageUrl;
 }

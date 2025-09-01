@@ -1,19 +1,20 @@
 package com.mediatower.backend.controller;
 
-import com.mediatower.backend.dto.AdminUserDto;
-import com.mediatower.backend.dto.OrderDto;
-import com.mediatower.backend.dto.ReviewDto;
-import com.mediatower.backend.dto.UserProfileDto;
+import com.mediatower.backend.dto.*;
 import com.mediatower.backend.model.User;
 import com.mediatower.backend.security.FirebaseUser;
 import com.mediatower.backend.service.OrderService;
 import com.mediatower.backend.service.ReviewService;
 import com.mediatower.backend.service.UserService;
+import jakarta.servlet.http.HttpServletRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Map;
@@ -23,6 +24,10 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/api/users")
 public class UserController {
+
+    // === CORRECTION 1: Ajout de la déclaration du logger ===
+    private static final Logger logger = LoggerFactory.getLogger(UserController.class);
+
     private final UserService userService;
     private final OrderService orderService;
     private final ReviewService reviewService;
@@ -45,6 +50,51 @@ public class UserController {
 
         User user = userOptional.get();
         return ResponseEntity.ok(userService.convertToDto(user));
+    }
+
+    @PutMapping("/me/password")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<?> changeCurrentUserPassword(
+            @AuthenticationPrincipal FirebaseUser firebaseUser,
+            @RequestBody Map<String, String> payload,
+            HttpServletRequest request) {
+
+        String oldPassword = payload.get("oldPassword");
+        String newPassword = payload.get("newPassword");
+
+        if (oldPassword == null || newPassword == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "oldPassword and newPassword are required."));
+        }
+
+        try {
+            User user = userService.findUserByEmail(firebaseUser.getEmail())
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+
+            userService.changePasswordFromProfile(user, oldPassword, newPassword, request);
+
+            return ResponseEntity.ok(Map.of("message", "Password updated successfully."));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            logger.error("Error changing password for user {}: {}", firebaseUser.getEmail(), e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "An internal error occurred."));
+        }
+    }
+
+    // === CORRECTION 2: Suppression de la méthode en double. On ne garde que celle-ci. ===
+    @GetMapping("/me/password-history")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<List<PasswordHistoryDto>> getPasswordHistory(@AuthenticationPrincipal FirebaseUser firebaseUser) {
+        try {
+            User user = userService.findUserByEmail(firebaseUser.getEmail())
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+
+            List<PasswordHistoryDto> history = userService.getPasswordHistoryForUser(user);
+            return ResponseEntity.ok(history);
+        } catch (Exception e) {
+            logger.error("Error fetching password history for user {}: {}", firebaseUser.getEmail(), e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
     }
 
     @PutMapping("/me")
@@ -149,6 +199,24 @@ public class UserController {
             return ResponseEntity.noContent().build();
         } catch (RuntimeException e) {
             return ResponseEntity.notFound().build();
+        }
+    }
+    @PostMapping("/me/profile-image")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<?> uploadProfileImage(
+            @AuthenticationPrincipal FirebaseUser firebaseUser,
+            @RequestParam("file") MultipartFile file) {
+
+        if (file.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Please select a file to upload."));
+        }
+
+        try {
+            UserProfileDto updatedUser = userService.updateUserProfileImage(firebaseUser.getEmail(), file);
+            return ResponseEntity.ok(updatedUser);
+        } catch (Exception e) {
+            logger.error("Could not upload profile image for user {}: {}", firebaseUser.getEmail(), e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Failed to upload image."));
         }
     }
 }

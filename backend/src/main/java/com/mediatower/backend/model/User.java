@@ -133,4 +133,7 @@ public class User {
 
         return false;
     }
+    @Column(length = 1024) // Permet une URL assez longue
+    private String profileImageUrl;
+
 }

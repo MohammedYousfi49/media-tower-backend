@@ -54,6 +54,38 @@ public class FileStorageService {
             throw new RuntimeException("Could not store file " + fileName + ". Please try again!", ex);
         }
     }
+    public String storeProfileImage(MultipartFile file) {
+        String subfolder = "profile-images";
+        String originalFileName = StringUtils.cleanPath(file.getOriginalFilename());
+
+        try {
+            if (originalFileName.contains("..")) {
+                throw new RuntimeException("Filename contains invalid path sequence: " + originalFileName);
+            }
+
+            // Générer un nom de fichier unique pour éviter les conflits
+            String fileExtension = "";
+            int i = originalFileName.lastIndexOf('.');
+            if (i > 0) {
+                fileExtension = originalFileName.substring(i);
+            }
+            String uniqueFileName = UUID.randomUUID().toString() + fileExtension;
+
+            // S'assurer que le sous-dossier existe
+            Path targetLocationFolder = this.fileStorageLocation.resolve(subfolder);
+            Files.createDirectories(targetLocationFolder);
+
+            // Copier le fichier
+            Path targetLocation = targetLocationFolder.resolve(uniqueFileName);
+            Files.copy(file.getInputStream(), targetLocation, StandardCopyOption.REPLACE_EXISTING);
+
+            // Retourner le chemin web public, ex: "/uploads/profile-images/uuid.jpg"
+            return "/uploads/" + subfolder + "/" + uniqueFileName;
+
+        } catch (IOException ex) {
+            throw new RuntimeException("Could not store profile image " + originalFileName, ex);
+        }
+    }
 
     public Resource loadFileAsResource(String fileName) {
         try {

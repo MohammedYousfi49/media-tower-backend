@@ -1,11 +1,10 @@
 package com.mediatower.backend.controller;
 
 import com.mediatower.backend.dto.RegisterRequest;
+import com.mediatower.backend.model.SecurityActionType;
 import com.mediatower.backend.model.User;
 import com.mediatower.backend.repository.UserRepository;
-import com.mediatower.backend.service.MfaService;
-import com.mediatower.backend.service.RateLimitingService;
-import com.mediatower.backend.service.UserService;
+import com.mediatower.backend.service.*;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.security.core.Authentication;
 
@@ -31,25 +30,32 @@ public class AuthController {
     private final MfaService mfaService;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final AuditLogService auditLogService;// <-- Dépendance ajoutée
+    private final DeviceService deviceService;
+
 
     public AuthController(UserService userService, RateLimitingService rateLimitingService,
                           UserRepository userRepository, PasswordEncoder passwordEncoder,
-                          MfaService mfaService) {
+                          MfaService mfaService, AuditLogService auditLogService, DeviceService deviceService) {
         this.userService = userService;
         this.rateLimitingService = rateLimitingService;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.mfaService = mfaService;
+        this.auditLogService = auditLogService;
+        this.deviceService = deviceService;
     }
 
     @PostMapping("/login")
-    public ResponseEntity<?> login(Authentication authentication) {
+    public ResponseEntity<?> login(HttpServletRequest request, Authentication authentication) {
         if (authentication == null || !authentication.isAuthenticated()) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Authentication required."));
         }
         String email = authentication.getName();
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found: " + email));
+
+        auditLogService.logEvent(user, SecurityActionType.LOGIN_SUCCESS, request, "Authentification initiale réussie.");
 
         if (user.getStatus() != com.mediatower.backend.model.UserStatus.ACTIVE) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Account is not active.", "accountInactive", true));
@@ -65,23 +71,24 @@ public class AuthController {
                     "recoveryCodesCount", user.getAvailableRecoveryCodesCount()
             ));
         } else {
+            // Connexion complète ici, on vérifie l'appareil.
+            deviceService.handleDeviceVerification(user, request);
             return ResponseEntity.ok(Map.of("status", "success", "user", userService.convertToDto(user)));
         }
     }
 
+    // ▼▼▼ MÉTHODE MODIFIÉE ▼▼▼
     @PostMapping("/google-login")
-    public ResponseEntity<?> googleLogin(Authentication authentication) {
+    public ResponseEntity<?> googleLogin(HttpServletRequest request, Authentication authentication) {
         if (authentication == null || !authentication.isAuthenticated()) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Authentication required."));
         }
         String email = authentication.getName();
+        // La méthode findOrCreate a déjà fait son travail de liaison de compte ici
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found: " + email));
 
-        if (!user.isEmailVerified()) {
-            user.setEmailVerified(true);
-            userRepository.save(user);
-        }
+        auditLogService.logEvent(user, SecurityActionType.LOGIN_SUCCESS, request, "Authentification Google initiale réussie.");
 
         if (user.getStatus() != com.mediatower.backend.model.UserStatus.ACTIVE) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Account is not active.", "accountInactive", true));
@@ -94,12 +101,15 @@ public class AuthController {
                     "recoveryCodesCount", user.getAvailableRecoveryCodesCount()
             ));
         } else {
+            // Connexion Google complète ici, on vérifie l'appareil.
+            deviceService.handleDeviceVerification(user, request);
             return ResponseEntity.ok(Map.of("status", "success", "user", userService.convertToDto(user)));
         }
     }
 
+    // ▼▼▼ MÉTHODE MODIFIÉE ▼▼▼
     @PostMapping("/verify-2fa")
-    public ResponseEntity<?> verifyTwoFactorAuth(@RequestBody Map<String, String> payload, Authentication authentication) {
+    public ResponseEntity<?> verifyTwoFactorAuth(@RequestBody Map<String, String> payload, HttpServletRequest request, Authentication authentication) {
         if (authentication == null || !authentication.isAuthenticated()) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Authentication required."));
         }
@@ -116,16 +126,17 @@ public class AuthController {
             return ResponseEntity.badRequest().body(Map.of("error", "MFA is not enabled for this account."));
         }
 
-        logger.info("Attempting 2FA verification for user: {} with code: {}", email, code);
-
         MfaService.MfaVerificationResult result = mfaService.verifyMfaCode(email, code);
 
         if (!result.isValid()) {
-            logger.warn("Invalid MFA code attempt for user: {} - Result: {}", email, result.getType());
+            auditLogService.logEvent(user, SecurityActionType.MFA_VERIFICATION_FAILED, request, "Code invalide fourni.");
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Invalid MFA code."));
         }
 
-        logger.info("MFA verification successful for user: {} (method: {})", email, result.getType());
+        auditLogService.logEvent(user, SecurityActionType.MFA_VERIFICATION_SUCCESS, request, "Méthode : " + result.getType().name());
+
+        // Connexion 2FA complète ici, on vérifie l'appareil.
+        deviceService.handleDeviceVerification(user, request);
 
         return ResponseEntity.ok(Map.of(
                 "status", "success",
@@ -138,6 +149,7 @@ public class AuthController {
 
     @PostMapping("/register")
     public ResponseEntity<?> registerUser(@RequestBody RegisterRequest registerRequest) {
+        // La journalisation pour l'inscription sera gérée dans le UserService pour avoir l'objet User
         try {
             userService.processRegistration(registerRequest);
             return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("message", "Registration successful. Please check your email to verify your account."));
@@ -148,6 +160,7 @@ public class AuthController {
 
     @GetMapping("/verify-email/{token}")
     public ResponseEntity<?> verifyEmail(@PathVariable("token") String token) {
+        // La journalisation sera gérée dans le UserService
         try {
             userService.verifyUser(token);
             return ResponseEntity.ok(Map.of("message", "Email verified successfully. You can now log in."));
@@ -155,6 +168,7 @@ public class AuthController {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("message", e.getMessage()));
         }
     }
+
 
     @PostMapping("/resend-verification")
     public ResponseEntity<?> resendVerification(@RequestBody Map<String, String> payload) {
@@ -175,6 +189,7 @@ public class AuthController {
 
     @PostMapping("/forgot-password")
     public ResponseEntity<?> forgotPassword(HttpServletRequest request, @RequestBody Map<String, String> payload) {
+        // La journalisation sera gérée dans le UserService
         String email = payload.get("email");
         if (email == null || email.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("message", "Email is required."));
@@ -186,7 +201,7 @@ public class AuthController {
         }
 
         try {
-            userService.createPasswordResetTokenForUser(email);
+            userService.createPasswordResetTokenForUser(email, request); // <-- Passage de request
             return ResponseEntity.ok(Map.of("message", "If an account with that email exists, a password reset link has been sent."));
         } catch (Exception e) {
             logger.error("Error in forgotPassword for {}: {}", email, e.getMessage());
@@ -194,17 +209,19 @@ public class AuthController {
         }
     }
 
+
     @PostMapping("/reset-password")
-    public ResponseEntity<?> resetPassword(@RequestBody Map<String, String> request) {
-        String token = request.get("token");
-        String newPassword = request.get("password");
+    public ResponseEntity<?> resetPassword(@RequestBody Map<String, String> requestBody, HttpServletRequest request) { // <-- Ajout de HttpServletRequest
+        // La journalisation sera gérée dans le UserService
+        String token = requestBody.get("token");
+        String newPassword = requestBody.get("password");
 
         Optional<String> validationError = userService.validatePasswordResetToken(token);
         if (validationError.isPresent()) {
             return ResponseEntity.badRequest().body(Map.of("error", validationError.get()));
         }
 
-        userService.changeUserPassword(token, newPassword);
+        userService.changeUserPassword(token, newPassword, request); // <-- Passage de request
         return ResponseEntity.ok(Map.of("message", "Your password has been reset successfully."));
     }
 }

@@ -9,38 +9,38 @@ import org.hibernate.annotations.CreationTimestamp;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "audit_logs")
+@Table(name = "password_history")
 @Getter
 @Setter
 @NoArgsConstructor
-public class AuditLog {
+public class PasswordHistory {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id")
+    @JoinColumn(name = "user_id", nullable = false)
     private User user;
+
+    @Column(nullable = false)
+    private String passwordHash;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private SecurityActionType action;
+    private PasswordChangeMethod changeMethod;
 
     @Column
     private String ipAddress;
 
-    @Column(length = 512)
-    private String details;
-
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
-    private LocalDateTime timestamp;
+    private LocalDateTime changeDate;
 
-    public AuditLog(User user, SecurityActionType action, String ipAddress, String details) {
+    public PasswordHistory(User user, String passwordHash, PasswordChangeMethod changeMethod, String ipAddress) {
         this.user = user;
-        this.action = action;
+        this.passwordHash = passwordHash;
+        this.changeMethod = changeMethod;
         this.ipAddress = ipAddress;
-        this.details = details;
     }
 }
