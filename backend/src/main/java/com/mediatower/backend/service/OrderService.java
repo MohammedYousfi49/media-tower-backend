@@ -1,16 +1,25 @@
+// Fichier : src/main/java/com/mediatower/backend/service/OrderService.java (COMPLET ET FINAL)
+
 package com.mediatower.backend.service;
 
 import com.mediatower.backend.dto.OrderDto;
 import com.mediatower.backend.dto.OrderItemDto;
+import com.mediatower.backend.dto.PromotionDto;
 import com.mediatower.backend.model.*;
-import com.mediatower.backend.repository.*;
+import com.mediatower.backend.repository.OrderRepository;
+import com.mediatower.backend.repository.ProductRepository;
+import com.mediatower.backend.repository.PromotionRepository;
+import com.mediatower.backend.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -23,69 +32,26 @@ public class OrderService {
     private final UserRepository userRepository;
     private final ProductRepository productRepository;
     private final DeliveryService deliveryService;
+    private final PromotionService promotionService;
+    private final PromotionRepository promotionRepository;
 
     public OrderService(OrderRepository orderRepository, UserRepository userRepository,
                         ProductRepository productRepository,
-                        @Lazy DeliveryService deliveryService) {
+                        @Lazy DeliveryService deliveryService,
+                        PromotionService promotionService,
+                        PromotionRepository promotionRepository) {
         this.orderRepository = orderRepository;
         this.userRepository = userRepository;
         this.productRepository = productRepository;
         this.deliveryService = deliveryService;
-    }
-
-    @Transactional
-    public OrderDto updateOrderStatus(Long id, OrderStatus status) {
-        Order order = orderRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Order not found with ID: " + id));
-
-        if (order.getStatus() == status) {
-            return convertToDto(order);
-        }
-
-        // ====================== CORRECTION CLÉ ======================
-        // On met à jour le statut initial
-        order.setStatus(status);
-        order = orderRepository.save(order); // Sauvegarder immédiatement
-        logger.info("Order {} status updated to {}.", id, status);
-
-        // Si le statut est CONFIRMED, on déclenche le processus de livraison
-        if (status == OrderStatus.CONFIRMED) {
-            logger.info("Order {} confirmed. Triggering delivery process.", id);
-
-            // Le DeliveryService va gérer l'accès, l'email et changer le statut à DELIVERED
-            // IMPORTANT: On passe l'ordre déjà sauvegardé pour éviter les problèmes de transaction
-            Order deliveredOrder = deliveryService.processOrderDelivery(order);
-
-            // On retourne directement l'ordre retourné par le DeliveryService
-            return convertToDto(deliveredOrder);
-        }
-        // =============================================================
-
-        return convertToDto(order);
-    }
-
-    public List<OrderDto> getAllOrders() {
-        return orderRepository.findAll().stream()
-                .map(this::convertToDto)
-                .collect(Collectors.toList());
-    }
-
-    public OrderDto getOrderById(Long id) {
-        Order order = orderRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Order not found with ID: " + id));
-        return convertToDto(order);
-    }
-
-    public List<OrderDto> getOrdersByUserId(String userUid) {
-        User user = userRepository.findByUid(userUid)
-                .orElseThrow(() -> new RuntimeException("User not found with UID: " + userUid));
-        return orderRepository.findByUser(user).stream()
-                .map(this::convertToDto)
-                .collect(Collectors.toList());
+        this.promotionService = promotionService;
+        this.promotionRepository = promotionRepository;
     }
 
     @Transactional
     public OrderDto createOrder(String userUid, OrderDto orderDto) {
+        logger.info("Début de la création de commande pour l'utilisateur UID: {}. Code promo fourni: '{}'", userUid, orderDto.getPromotionCode());
+
         if (orderDto.getOrderItems() == null || orderDto.getOrderItems().isEmpty()) {
             throw new RuntimeException("Cannot create an order with no items.");
         }
@@ -110,17 +76,105 @@ public class OrderService {
         }).collect(Collectors.toList());
 
         order.setOrderItems(orderItems);
-        BigDecimal totalAmount = orderItems.stream()
+
+        BigDecimal subtotal = orderItems.stream()
                 .map(OrderItem::getSubtotal)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        if (totalAmount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new RuntimeException("Order total amount must be greater than zero.");
-        }
-        order.setTotalAmount(totalAmount);
+        logger.info("Sous-total calculé pour la commande: {} DH", subtotal);
 
+        BigDecimal finalTotal = subtotal;
+
+        if (orderDto.getPromotionCode() != null && !orderDto.getPromotionCode().trim().isEmpty()) {
+            try {
+                PromotionDto promoDto = promotionService.validatePromotionCode(orderDto.getPromotionCode());
+                logger.info("Promotion '{}' validée avec succès.", orderDto.getPromotionCode());
+
+                // ▼▼▼ APPEL À LA MÉTHODE QUI AVAIT ÉTÉ SUPPRIMÉE PAR ERREUR ▼▼▼
+                BigDecimal calculatedDiscount = calculateProductOnlyDiscount(orderItems, promoDto);
+
+                if (calculatedDiscount.compareTo(BigDecimal.ZERO) > 0) {
+                    finalTotal = subtotal.subtract(calculatedDiscount);
+                    Promotion promotionEntity = promotionRepository.findById(promoDto.getId()).orElse(null);
+                    order.setAppliedPromotion(promotionEntity);
+                    order.setDiscountAmount(calculatedDiscount);
+                    logger.info("Réduction de {} DH appliquée. Nouveau total: {} DH", calculatedDiscount, finalTotal);
+                } else {
+                    logger.warn("Le code promo '{}' est valide mais ne s'applique à aucun produit du panier.", orderDto.getPromotionCode());
+                }
+            } catch (Exception e) {
+                logger.error("Erreur lors de la validation du code promo '{}': {}", orderDto.getPromotionCode(), e.getMessage());
+            }
+        }
+
+        if (finalTotal.compareTo(BigDecimal.ZERO) < 0) {
+            finalTotal = BigDecimal.ZERO;
+        }
+
+        order.setTotalAmount(finalTotal);
         Order savedOrder = orderRepository.save(order);
+
+        logger.info("Commande #{} créée avec succès. Montant final: {} DH", savedOrder.getId(), finalTotal);
         return convertToDto(savedOrder);
+    }
+
+    // ▼▼▼ RÉINTRODUCTION DE LA MÉTHODE MANQUANTE ▼▼▼
+    private BigDecimal calculateProductOnlyDiscount(List<OrderItem> items, PromotionDto promotion) {
+        BigDecimal totalDiscount = BigDecimal.ZERO;
+
+        for (OrderItem item : items) {
+            if (item.getProduct() != null) {
+                boolean isEligible = promotion.getApplicableProductIds().isEmpty() ||
+                        promotion.getApplicableProductIds().contains(item.getProduct().getId());
+
+                if (isEligible) {
+                    BigDecimal itemSubtotal = item.getSubtotal();
+                    BigDecimal itemDiscount;
+
+                    if ("PERCENTAGE".equals(promotion.getDiscountType())) {
+                        BigDecimal discountRate = promotion.getDiscountValue();
+                        itemDiscount = itemSubtotal.multiply(discountRate.divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP));
+                    } else { // FIXED_AMOUNT
+                        itemDiscount = itemSubtotal.min(promotion.getDiscountValue());
+                    }
+                    totalDiscount = totalDiscount.add(itemDiscount);
+                }
+            }
+        }
+        return totalDiscount.setScale(2, RoundingMode.HALF_UP);
+    }
+    // ▲▲▲ FIN DE LA RÉINTRODUCTION ▲▲▲
+
+    @Transactional
+    public OrderDto updateOrderStatus(Long id, OrderStatus status) {
+        Order order = orderRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Order not found with ID: " + id));
+        if (order.getStatus() == status) { return convertToDto(order); }
+        order.setStatus(status);
+        order = orderRepository.save(order);
+        logger.info("Order {} status updated to {}.", id, status);
+        if (status == OrderStatus.CONFIRMED) {
+            logger.info("Order {} confirmed. Triggering delivery process.", id);
+            Order deliveredOrder = deliveryService.processOrderDelivery(order);
+            return convertToDto(deliveredOrder);
+        }
+        return convertToDto(order);
+    }
+
+    public Page<OrderDto> getAllOrdersPaginated(String searchTerm, Pageable pageable) {
+        String search = (searchTerm == null || searchTerm.trim().isEmpty()) ? null : searchTerm;
+        return orderRepository.findBySearchTerm(search, pageable).map(this::convertToDto);
+    }
+
+    public OrderDto getOrderById(Long id) {
+        return orderRepository.findById(id).map(this::convertToDto)
+                .orElseThrow(() -> new RuntimeException("Order not found with ID: " + id));
+    }
+
+    public List<OrderDto> getOrdersByUserId(String userUid) {
+        User user = userRepository.findByUid(userUid)
+                .orElseThrow(() -> new RuntimeException("User not found with UID: " + userUid));
+        return orderRepository.findByUser(user).stream().map(this::convertToDto).collect(Collectors.toList());
     }
 
     public boolean canUserReviewProduct(String userUid, Long productId) {
@@ -139,45 +193,34 @@ public class OrderService {
     public OrderDto convertToDto(Order order) {
         OrderDto dto = new OrderDto();
         dto.setId(order.getId());
-
         if (order.getUser() != null) {
-            OrderDto.UserInfo userInfo = new OrderDto.UserInfo(
+            dto.setUser(new OrderDto.UserInfo(
                     order.getUser().getUid(),
                     order.getUser().getFirstName(),
                     order.getUser().getLastName(),
                     order.getUser().getEmail()
-            );
-            dto.setUser(userInfo);
+            ));
         }
-
         dto.setOrderDate(order.getOrderDate());
         dto.setStatus(order.getStatus().name());
         dto.setTotalAmount(order.getTotalAmount());
-
         if (order.getOrderItems() != null) {
-            dto.setOrderItems(order.getOrderItems().stream()
-                    .map(item -> {
-                        OrderItemDto itemDto = new OrderItemDto();
-                        itemDto.setId(item.getId());
-                        if (item.getProduct() != null) {
-                            itemDto.setProductId(item.getProduct().getId());
-                            String productName = item.getProduct().getNames() != null
-                                    ? item.getProduct().getNames().getOrDefault("en", "N/A")
-                                    : "N/A";
-                            itemDto.setProductName(productName);
-                        }
-                        itemDto.setQuantity(item.getQuantity());
-                        itemDto.setUnitPrice(item.getUnitPrice());
-                        itemDto.setSubtotal(item.getSubtotal());
-                        return itemDto;
-                    })
-                    .collect(Collectors.toList()));
+            dto.setOrderItems(order.getOrderItems().stream().map(item -> {
+                OrderItemDto itemDto = new OrderItemDto();
+                itemDto.setId(item.getId());
+                if (item.getProduct() != null) {
+                    itemDto.setProductId(item.getProduct().getId());
+                    itemDto.setProductName(item.getProduct().getNames().getOrDefault("en", "N/A"));
+                }
+                itemDto.setQuantity(item.getQuantity());
+                itemDto.setUnitPrice(item.getUnitPrice());
+                itemDto.setSubtotal(item.getSubtotal());
+                return itemDto;
+            }).collect(Collectors.toList()));
         }
-
         if (order.getPayment() != null) {
             dto.setPaymentMethod(order.getPayment().getPaymentMethod());
         }
-
         return dto;
     }
 }

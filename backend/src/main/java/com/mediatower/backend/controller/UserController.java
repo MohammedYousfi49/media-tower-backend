@@ -9,6 +9,8 @@ import com.mediatower.backend.service.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -52,35 +54,45 @@ public class UserController {
         return ResponseEntity.ok(userService.convertToDto(user));
     }
 
-    @PutMapping("/me/password")
-    @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<?> changeCurrentUserPassword(
-            @AuthenticationPrincipal FirebaseUser firebaseUser,
-            @RequestBody Map<String, String> payload,
-            HttpServletRequest request) {
-
-        String oldPassword = payload.get("oldPassword");
-        String newPassword = payload.get("newPassword");
-
-        if (oldPassword == null || newPassword == null) {
-            return ResponseEntity.badRequest().body(Map.of("error", "oldPassword and newPassword are required."));
-        }
-
-        try {
-            User user = userService.findUserByEmail(firebaseUser.getEmail())
-                    .orElseThrow(() -> new RuntimeException("User not found"));
-
-            userService.changePasswordFromProfile(user, oldPassword, newPassword, request);
-
-            return ResponseEntity.ok(Map.of("message", "Password updated successfully."));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
-        } catch (Exception e) {
-            logger.error("Error changing password for user {}: {}", firebaseUser.getEmail(), e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "An internal error occurred."));
-        }
-    }
-
+//    @PutMapping("/me/password")
+//    @PreAuthorize("isAuthenticated()")
+//    public ResponseEntity<?> changeCurrentUserPassword(
+//            @AuthenticationPrincipal FirebaseUser firebaseUser,
+//            @RequestBody Map<String, String> payload,
+//            HttpServletRequest request) {
+//
+//        logger.info("Password change request received for user: {}", firebaseUser.getEmail());
+//
+//        String oldPassword = payload.get("oldPassword");
+//        String newPassword = payload.get("newPassword");
+//
+//        if (oldPassword == null || oldPassword.trim().isEmpty()) {
+//            logger.warn("Missing oldPassword for user: {}", firebaseUser.getEmail());
+//            return ResponseEntity.badRequest().body(Map.of("error", "Old password is required."));
+//        }
+//
+//        if (newPassword == null || newPassword.trim().isEmpty()) {
+//            logger.warn("Missing newPassword for user: {}", firebaseUser.getEmail());
+//            return ResponseEntity.badRequest().body(Map.of("error", "New password is required."));
+//        }
+//
+//        try {
+//            User user = userService.findUserByEmail(firebaseUser.getEmail())
+//                    .orElseThrow(() -> new RuntimeException("User not found"));
+//
+//            logger.info("Attempting password change for user: {}", user.getEmail());
+//            userService.changePasswordFromProfile(user, oldPassword, newPassword, request);
+//
+//            logger.info("Password changed successfully for user: {}", user.getEmail());
+//            return ResponseEntity.ok(Map.of("message", "Password updated successfully."));
+//        } catch (IllegalArgumentException e) {
+//            logger.warn("Password change failed for user {}: {}", firebaseUser.getEmail(), e.getMessage());
+//            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
+//        } catch (Exception e) {
+//            logger.error("Error changing password for user {}: {}", firebaseUser.getEmail(), e.getMessage(), e);
+//            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "An internal error occurred."));
+//        }
+//    }
     // === CORRECTION 2: Suppression de la méthode en double. On ne garde que celle-ci. ===
     @GetMapping("/me/password-history")
     @PreAuthorize("isAuthenticated()")
@@ -135,10 +147,12 @@ public class UserController {
 
     @GetMapping
     @PreAuthorize("hasRole('ADMIN')")
-    public List<AdminUserDto> getAllUsers() {
-        return userService.findAllUsers().stream()
-                .map(userService::convertToAdminDto)
-                .collect(Collectors.toList());
+    public ResponseEntity<Page<AdminUserDto>> getAllUsers(
+            @RequestParam(required = false) String search, // Paramètre pour la recherche
+            Pageable pageable // Paramètres pour la pagination (page, size, sort)
+    ) {
+        Page<AdminUserDto> users = userService.findAllUsersPaginated(search, pageable);
+        return ResponseEntity.ok(users);
     }
 
     @GetMapping("/{id}")
@@ -218,5 +232,14 @@ public class UserController {
             logger.error("Could not upload profile image for user {}: {}", firebaseUser.getEmail(), e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Failed to upload image."));
         }
+    }
+    @GetMapping("/me/login-history")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<List<LoginHistoryDto>> getLoginHistory(@AuthenticationPrincipal FirebaseUser firebaseUser) {
+        User user = userService.findUserByEmail(firebaseUser.getEmail())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        List<LoginHistoryDto> history = userService.getLoginHistoryForUser(user);
+        return ResponseEntity.ok(history);
     }
 }

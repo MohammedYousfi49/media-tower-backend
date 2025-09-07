@@ -10,6 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Service;
+import io.github.bucket4j.ConsumptionProbe;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -24,6 +25,7 @@ public class RateLimitingService {
 
     // Cache pour les tentatives de renvoi d'email de vérification
     private final Cache<String, RateLimitAttempt> resendVerificationCache;
+    private final Map<String, Bucket> loginAttemptCache = new ConcurrentHashMap<>();
 
     // Cache pour les tentatives de forgot password par email
     private final Cache<String, RateLimitAttempt> forgotPasswordCache;
@@ -159,5 +161,30 @@ public class RateLimitingService {
         public boolean isAllowed() { return allowed; }
         public long getSecondsRemaining() { return secondsRemaining; }
         public int getMaxAttempts() { return maxAttempts; }
+    }
+    /**
+     * Vérifie si une tentative de connexion est autorisée depuis une adresse IP.
+     * Si la tentative est bloquée, retourne le temps d'attente en secondes.
+     *
+     * @param ip L'adresse IP du client.
+     * @return Un objet RateLimitResult. `isAllowed()` sera `false` si la limite est dépassée.
+     */
+    public RateLimitResult checkLoginAttempt(String ip) {
+        Bucket bucket = loginAttemptCache.computeIfAbsent(ip, key -> {
+            // Configuration stricte : 10 tentatives autorisées, puis recharge 1 tentative toutes les 30 secondes.
+            // Cela signifie qu'après 10 échecs, l'utilisateur doit attendre 30s pour un nouvel essai.
+            Bandwidth limit = Bandwidth.classic(10, Refill.intervally(1, Duration.ofSeconds(30)));
+            return Bucket.builder().addLimit(limit).build();
+        });
+
+        ConsumptionProbe probe = bucket.tryConsumeAndReturnRemaining(1);
+        if (probe.isConsumed()) {
+            return new RateLimitResult(true, 0, 10); // Autorisé
+        } else {
+            // Calcul du temps d'attente en secondes
+            long secondsRemaining = TimeUnit.NANOSECONDS.toSeconds(probe.getNanosToWaitForRefill());
+            logger.warn("Tentative de connexion bloquée pour l'IP {}. Attente de {} secondes.", ip, secondsRemaining);
+            return new RateLimitResult(false, secondsRemaining, 10); // Bloqué
+        }
     }
 }

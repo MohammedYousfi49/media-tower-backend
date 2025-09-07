@@ -48,6 +48,11 @@ public class Order {
         this.createdAt = LocalDateTime.now();
         this.updatedAt = LocalDateTime.now();
     }
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "promotion_id")
+    private Promotion appliedPromotion;
+
+    private BigDecimal discountAmount;
 
     @PreUpdate
     protected void onUpdate() {

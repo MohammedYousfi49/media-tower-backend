@@ -5,6 +5,8 @@ import com.mediatower.backend.model.OrderStatus;
 import com.mediatower.backend.model.UserRole;
 import com.mediatower.backend.security.FirebaseUser;
 import com.mediatower.backend.service.OrderService;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -26,8 +28,11 @@ public class OrderController {
 
     @GetMapping
     @PreAuthorize("hasRole('ADMIN')")
-    public List<OrderDto> getAllOrders() {
-        return orderService.getAllOrders();
+    public ResponseEntity<Page<OrderDto>> getAllOrders(
+            @RequestParam(required = false) String search,
+            Pageable pageable) {
+        Page<OrderDto> orders = orderService.getAllOrdersPaginated(search, pageable);
+        return ResponseEntity.ok(orders);
     }
 
     @GetMapping("/me")

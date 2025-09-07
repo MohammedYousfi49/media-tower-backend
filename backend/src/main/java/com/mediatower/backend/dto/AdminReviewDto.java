@@ -12,6 +12,7 @@ public class AdminReviewDto {
     private Long sourceId; // ID du produit ou du service
     private String sourceName; // Nom du produit ou du service
     private String userName;
+    private String userEmail;
     private Integer rating;
     private String comment;
     private LocalDateTime reviewDate;

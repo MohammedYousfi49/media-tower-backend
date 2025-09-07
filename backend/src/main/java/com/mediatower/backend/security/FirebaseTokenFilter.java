@@ -39,6 +39,8 @@ public class FirebaseTokenFilter extends OncePerRequestFilter {
                 new AntPathRequestMatcher("/api/auth/resend-verification", HttpMethod.POST.name()),
                 new AntPathRequestMatcher("/api/auth/forgot-password", "POST"),
                 new AntPathRequestMatcher("/api/auth/reset-password", "POST"),
+                new AntPathRequestMatcher("/uploads/**", HttpMethod.GET.name()),
+
 
                 // IMPORTANT: /api/auth/login et /api/auth/verify-2fa NE SONT PLUS dans cette liste
                 // car ils doivent maintenant passer par le filtre d'authentification
@@ -92,7 +94,14 @@ public class FirebaseTokenFilter extends OncePerRequestFilter {
 
             try {
                 logger.debug("Validating Firebase token for request: {}", requestInfo);
-                FirebaseToken decodedToken = FirebaseAuth.getInstance().verifyIdToken(token);
+
+                // ============================ LA CORRECTION EST ICI ============================
+                // On passe 'false' pour indiquer à Firebase de valider le token SANS exiger
+                // que l'attribut 'email_verified' soit à 'true'. La vérification de l'email
+                // sera gérée par notre logique métier dans AuthController.
+                FirebaseToken decodedToken = FirebaseAuth.getInstance().verifyIdToken(token, false);
+                // ========================== FIN DE LA CORRECTION ============================
+
                 logger.debug("Valid Firebase token for UID: {} on request: {}", decodedToken.getUid(), requestInfo);
 
                 User userInDb = userService.findOrCreateUserFromToken(decodedToken);

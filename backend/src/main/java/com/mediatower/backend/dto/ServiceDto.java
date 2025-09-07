@@ -9,5 +9,6 @@ public class ServiceDto {
     private Map<String, String> names, descriptions;
     private BigDecimal price;
     private List<MediaDto> images;
+    private Long bookingCount;
 
 }

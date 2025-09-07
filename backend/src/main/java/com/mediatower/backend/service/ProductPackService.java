@@ -10,6 +10,8 @@ import com.mediatower.backend.model.Product;
 import com.mediatower.backend.model.ProductPack;
 import com.mediatower.backend.repository.ProductPackRepository;
 import com.mediatower.backend.repository.ProductRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,16 +25,21 @@ public class ProductPackService {
 
     private final ProductPackRepository packRepository;
     private final ProductRepository productRepository;
+    private final ProductPackRepository productPackRepository;
     private final String baseUrl = "http://localhost:8080/api/download/";
 
-    public ProductPackService(ProductPackRepository packRepository, ProductRepository productRepository) {
+    public ProductPackService(ProductPackRepository packRepository, ProductRepository productRepository, ProductPackRepository productPackRepository) {
         this.packRepository = packRepository;
         this.productRepository = productRepository;
+        this.productPackRepository = productPackRepository;
     }
 
-    public List<ProductPackDto> getAllPacks() {
-        return packRepository.findAll().stream().map(this::convertToDto).collect(Collectors.toList());
+    public Page<ProductPackDto> getAllPacksPaginated(String searchTerm, Pageable pageable) {
+        String search = (searchTerm == null || searchTerm.trim().isEmpty()) ? null : searchTerm;
+        Page<ProductPack> packPage = packRepository.findBySearchTerm(search, pageable);
+        return packPage.map(this::convertToDto);
     }
+
 
     public Optional<ProductPackDto> getPackById(Long id) {
         return packRepository.findById(id).map(this::convertToDto);
@@ -101,5 +108,12 @@ public class ProductPackService {
         mediaDto.setUrl(baseUrl + media.getFileName());
         mediaDto.setPrimary(media.isPrimary());
         return mediaDto;
+    }
+
+    public List<ProductPackDto> getAllPacksForSelection() {
+        return productPackRepository.findAll()
+                .stream()
+                .map(this::convertToDto)
+                .collect(Collectors.toList());
     }
 }

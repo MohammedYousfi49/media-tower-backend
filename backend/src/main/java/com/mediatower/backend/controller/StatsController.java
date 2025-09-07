@@ -4,7 +4,7 @@ import com.mediatower.backend.dto.AdminUserDto;
 import com.mediatower.backend.dto.DashboardSummaryDto;
 import com.mediatower.backend.dto.UserStatsDto;
 import com.mediatower.backend.security.FirebaseUser;
-import com.mediatower.backend.service.PresenceService;
+//import com.mediatower.backend.service.PresenceService;
 import com.mediatower.backend.service.StatsService;
 import com.mediatower.backend.service.UserService;
 import org.springframework.http.CacheControl;
@@ -29,12 +29,12 @@ public class StatsController {
     private static final int CACHE_DURATION = 5; // seconds
 
     private final StatsService statsService;
-    private final PresenceService presenceService;
+//    private final PresenceService presenceService;
     private final UserService userService;
 
-    public StatsController(StatsService statsService, PresenceService presenceService, UserService userService) {
+    public StatsController(StatsService statsService,  UserService userService) {
         this.statsService = statsService;
-        this.presenceService = presenceService;
+
         this.userService = userService;
     }
 
@@ -46,25 +46,25 @@ public class StatsController {
                 .body(statsService.getDashboardSummary());
     }
 
-    @GetMapping("/support/online-agents")
-    public ResponseEntity<Collection<AdminUserDto>> getOnlineAgents() {
-        List<AdminUserDto> onlineAdmins = presenceService.getOnlineAdminUids().stream()
-                .flatMap(uid -> userService.findUserByUid(uid).stream())
-                .map(userService::convertToAdminDto)
-                .collect(Collectors.toList());
+//    @GetMapping("/support/online-agents")
+//    public ResponseEntity<Collection<AdminUserDto>> getOnlineAgents() {
+//        List<AdminUserDto> onlineAdmins = presenceService.getOnlineAdminUids().stream()
+//                .flatMap(uid -> userService.findUserByUid(uid).stream())
+//                .map(userService::convertToAdminDto)
+//                .collect(Collectors.toList());
+//
+//        return ResponseEntity.ok()
+//                .cacheControl(CacheControl.noCache())
+//                .body(onlineAdmins);
+//    }
 
-        return ResponseEntity.ok()
-                .cacheControl(CacheControl.noCache())
-                .body(onlineAdmins);
-    }
-
-    @GetMapping("/support/status")
-    public ResponseEntity<Map<String, Boolean>> getSupportStatus() {
-        boolean areAdminsAvailable = !presenceService.getOnlineAdminUids().isEmpty();
-        return ResponseEntity.ok()
-                .cacheControl(CacheControl.noCache())
-                .body(Collections.singletonMap("agentsAvailable", areAdminsAvailable));
-    }
+//    @GetMapping("/support/status")
+//    public ResponseEntity<Map<String, Boolean>> getSupportStatus() {
+//        boolean areAdminsAvailable = !presenceService.getOnlineAdminUids().isEmpty();
+//        return ResponseEntity.ok()
+//                .cacheControl(CacheControl.noCache())
+//                .body(Collections.singletonMap("agentsAvailable", areAdminsAvailable));
+//    }
 
     @GetMapping("/my-stats")
     @PreAuthorize("isAuthenticated()")

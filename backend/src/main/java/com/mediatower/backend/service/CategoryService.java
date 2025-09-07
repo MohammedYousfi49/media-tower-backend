@@ -1,27 +1,36 @@
-// src/main/java/com/mediatower/backend/service/CategoryService.java
-
 package com.mediatower.backend.service;
 
 import com.mediatower.backend.dto.CategoryDto;
 import com.mediatower.backend.model.Category;
 import com.mediatower.backend.repository.CategoryRepository;
+import com.mediatower.backend.repository.ProductRepository; // <-- AJOUT DE L'IMPORT
 import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 @Service
 public class CategoryService {
     private final CategoryRepository categoryRepository;
+    private final ProductRepository productRepository; // <-- AJOUT DE LA DÉPENDANCE
 
-    public CategoryService(CategoryRepository categoryRepository) {
+    // --- MISE À JOUR DU CONSTRUCTEUR ---
+    public CategoryService(CategoryRepository categoryRepository, ProductRepository productRepository) {
         this.categoryRepository = categoryRepository;
+        this.productRepository = productRepository;
     }
 
-    public List<CategoryDto> getAllCategories() {
-        return categoryRepository.findAll().stream()
-                .map(this::convertToDto)
-                .collect(Collectors.toList());
+    public Page<CategoryDto> getAllCategoriesPaginated(String search, Pageable pageable) {
+        Page<Category> categoryPage;
+        if (search != null && !search.trim().isEmpty()) {
+            categoryPage = categoryRepository.findByNamesContainingIgnoreCaseWithCollections(search, pageable);
+        } else {
+            categoryPage = categoryRepository.findAllWithCollections(pageable);
+        }
+        return categoryPage.map(this::convertToDto);
+
     }
 
     public Optional<CategoryDto> getCategoryById(Long id) {
@@ -29,9 +38,9 @@ public class CategoryService {
     }
 
     public CategoryDto createCategory(CategoryDto categoryDto) {
-        // La vérification d'unicité est plus complexe maintenant, on peut la skipper ou vérifier une langue par défaut
         Category category = convertToEntity(categoryDto);
-        return convertToDto(categoryRepository.save(category));
+        Category savedCategory = categoryRepository.save(category);
+        return convertToDto(savedCategory); // On reconvertit pour avoir un DTO complet avec l'ID et le productCount
     }
 
     public CategoryDto updateCategory(Long id, CategoryDto categoryDto) {
@@ -40,19 +49,33 @@ public class CategoryService {
 
         existingCategory.setNames(categoryDto.getNames());
         existingCategory.setDescriptions(categoryDto.getDescriptions());
-        return convertToDto(categoryRepository.save(existingCategory));
+        Category updatedCategory = categoryRepository.save(existingCategory);
+        return convertToDto(updatedCategory);
     }
 
     public void deleteCategory(Long id) {
         if (!categoryRepository.existsById(id)) {
             throw new RuntimeException("Category not found with ID: " + id);
         }
+        // --- AJOUT D'UNE VÉRIFICATION DE SÉCURITÉ ---
+        // Empêche la suppression d'une catégorie non vide.
+        long productCount = productRepository.countByCategoryId(id);
+        if (productCount > 0) {
+            throw new IllegalStateException("Cannot delete category with ID: " + id + " because it contains " + productCount + " products.");
+        }
         categoryRepository.deleteById(id);
     }
 
-    // --- Conversion Utilities ---
+    // --- MISE À JOUR DE LA MÉTHODE DE CONVERSION ---
     public CategoryDto convertToDto(Category category) {
-        return new CategoryDto(category.getId(), category.getNames(), category.getDescriptions());
+        // Pour chaque catégorie, on compte le nombre de produits associés
+        long count = productRepository.countByCategoryId(category.getId());
+        return new CategoryDto(
+                category.getId(),
+                category.getNames(),
+                category.getDescriptions(),
+                count // On ajoute le compte au DTO
+        );
     }
 
     public Category convertToEntity(CategoryDto categoryDto) {
@@ -61,5 +84,10 @@ public class CategoryService {
         category.setNames(categoryDto.getNames());
         category.setDescriptions(categoryDto.getDescriptions());
         return category;
+    }
+    public List<CategoryDto> getAllCategoriesList() {
+        return categoryRepository.findAll().stream()
+                .map(this::convertToDto)
+                .collect(Collectors.toList());
     }
 }

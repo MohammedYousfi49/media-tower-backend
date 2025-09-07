@@ -48,14 +48,30 @@ public class AuthController {
 
     @PostMapping("/login")
     public ResponseEntity<?> login(HttpServletRequest request, Authentication authentication) {
+
+        // ▼▼▼ BLOC DE SÉCURITÉ RATE LIMITING AJOUTÉ ▼▼▼
+        String clientIp = request.getRemoteAddr();
+        RateLimitingService.RateLimitResult rateLimitResult = rateLimitingService.checkLoginAttempt(clientIp);
+
+        if (!rateLimitResult.isAllowed()) {
+            // L'en-tête "Retry-After" indique au client combien de temps attendre.
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                    .header("Retry-After", String.valueOf(rateLimitResult.getSecondsRemaining()))
+                    .body(Map.of("error", "Trop de tentatives de connexion. Veuillez réessayer plus tard."));
+        }
+        // ▲▲▲ FIN DU BLOC DE SÉCURITÉ ▲▲▲
+
         if (authentication == null || !authentication.isAuthenticated()) {
+            // Note: En cas d'échec d'authentification (mot de passe incorrect),
+            // FirebaseTokenFilter renverra une erreur 401/403 avant même d'atteindre ce code.
+            // Le rate limiting protège contre les tentatives répétées qui mènent à ces erreurs.
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Authentication required."));
         }
         String email = authentication.getName();
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found: " + email));
 
-        auditLogService.logEvent(user, SecurityActionType.LOGIN_SUCCESS, request, "Authentification initiale réussie.");
+        auditLogService.logEvent(user, SecurityActionType.LOGIN_SUCCESS, request, "Authentification réussie.");
 
         if (user.getStatus() != com.mediatower.backend.model.UserStatus.ACTIVE) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Account is not active.", "accountInactive", true));
@@ -88,7 +104,7 @@ public class AuthController {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found: " + email));
 
-        auditLogService.logEvent(user, SecurityActionType.LOGIN_SUCCESS, request, "Authentification Google initiale réussie.");
+        auditLogService.logEvent(user, SecurityActionType.LOGIN_SUCCESS, request, "Authentification Google réussie.");
 
         if (user.getStatus() != com.mediatower.backend.model.UserStatus.ACTIVE) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Account is not active.", "accountInactive", true));

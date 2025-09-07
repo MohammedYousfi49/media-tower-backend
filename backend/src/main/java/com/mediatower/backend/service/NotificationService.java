@@ -43,14 +43,16 @@ public class NotificationService {
     }
 
     @Transactional
-    public void createAdminNotification(String message, String type) {
+    public void createAdminNotification(String message, String type, String link) { // <-- MODIFIÉ
         Notification notification = new Notification();
-        notification.setUser(null); // Les notifications admin n'ont pas d'utilisateur spécifique
+        notification.setUser(null);
         notification.setMessage(message);
         notification.setType(type);
         notification.setRead(false);
+        notification.setLink(link); // <-- AJOUT
         notificationRepository.save(notification);
     }
+
 
     public List<NotificationDto> getAllNotifications() {
         return notificationRepository.findAllByOrderByIdDesc().stream()
@@ -73,7 +75,7 @@ public class NotificationService {
                 .collect(Collectors.toList());
     }
 
-    private NotificationDto convertToDto(Notification notification) {
+     private NotificationDto convertToDto(Notification notification) {
         NotificationDto dto = new NotificationDto();
         dto.setId(notification.getId());
         dto.setUserId(notification.getUser() != null ? notification.getUser().getUid() : null);
@@ -81,6 +83,7 @@ public class NotificationService {
         dto.setType(notification.getType());
         dto.setRead(notification.isRead());
         dto.setCreatedAt(notification.getCreatedAt());
+        dto.setLink(notification.getLink()); // <-- AJOUT
         return dto;
     }
 }

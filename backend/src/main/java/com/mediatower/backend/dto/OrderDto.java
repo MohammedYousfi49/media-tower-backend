@@ -1,16 +1,11 @@
 package com.mediatower.backend.dto;
-
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
-
-
 import com.mediatower.backend.dto.OrderItemDto;
-
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -23,6 +18,8 @@ public class OrderDto {
     private BigDecimal totalAmount;
     private List<OrderItemDto> orderItems;
     private String paymentMethod;
+    private String promotionCode;
+
 
     @Data
     @NoArgsConstructor

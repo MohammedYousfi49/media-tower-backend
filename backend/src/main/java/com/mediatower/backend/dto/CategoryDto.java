@@ -18,4 +18,6 @@ public class CategoryDto {
     private Map<String, String> names;
 
     private Map<String, String> descriptions;
+    private Long productCount;
+
 }

@@ -5,6 +5,7 @@ import com.mediatower.backend.model.BookingStatus;
 import com.mediatower.backend.model.Service; // Assurez-vous que l'import est correct
 import com.mediatower.backend.model.ServiceReview;
 import com.mediatower.backend.model.User;
+import java.util.Optional;
 import com.mediatower.backend.repository.BookingRepository;
 import com.mediatower.backend.repository.ServiceRepository;
 import com.mediatower.backend.repository.ServiceReviewRepository;
@@ -28,6 +29,9 @@ public class ServiceReviewService {
         this.userRepository = userRepository;
         this.serviceRepository = serviceRepository;
         this.bookingRepository = bookingRepository;
+    }
+    public Optional<ServiceReviewDto> getReviewById(Long id) {
+        return reviewRepository.findById(id).map(this::convertToDto);
     }
 
     public List<ServiceReviewDto> getReviewsForService(Long serviceId) {
@@ -75,5 +79,12 @@ public class ServiceReviewService {
         dto.setComment(review.getComment());
         dto.setReviewDate(review.getReviewDate());
         return dto;
+    }
+    @Transactional
+    public void deleteReview(Long id) {
+        if (!reviewRepository.existsById(id)) {
+            throw new RuntimeException("Service review not found with ID: " + id);
+        }
+        reviewRepository.deleteById(id);
     }
 }

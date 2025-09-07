@@ -1,6 +1,10 @@
+// Fichier : src/main/java/com/mediatower/backend/controller/ServiceReviewController.java (COMPLET ET CORRIGÉ)
+
 package com.mediatower.backend.controller;
 
 import com.mediatower.backend.dto.ServiceReviewDto;
+import com.mediatower.backend.model.User;
+import com.mediatower.backend.repository.UserRepository;
 import com.mediatower.backend.security.FirebaseUser;
 import com.mediatower.backend.service.ServiceReviewService;
 import org.springframework.http.HttpStatus;
@@ -15,16 +19,21 @@ import java.util.List;
 @RequestMapping("/api/service-reviews")
 public class ServiceReviewController {
 
-    private final ServiceReviewService reviewService;
+    // On n'a besoin que de ces deux dépendances
+    private final ServiceReviewService serviceReviewService;
+    private final UserRepository userRepository;
 
-    public ServiceReviewController(ServiceReviewService reviewService) {
-        this.reviewService = reviewService;
+    // ▼▼▼ LE CONSTRUCTEUR EST CORRIGÉ ▼▼▼
+    public ServiceReviewController(ServiceReviewService serviceReviewService, UserRepository userRepository) {
+        this.serviceReviewService = serviceReviewService;
+        this.userRepository = userRepository;
     }
 
     // Public: tout le monde peut lire les avis d'un service
     @GetMapping("/service/{serviceId}")
     public ResponseEntity<List<ServiceReviewDto>> getReviewsForService(@PathVariable Long serviceId) {
-        return ResponseEntity.ok(reviewService.getReviewsForService(serviceId));
+        // ▼▼▼ CORRECTION : On utilise la bonne variable 'serviceReviewService' ▼▼▼
+        return ResponseEntity.ok(serviceReviewService.getReviewsForService(serviceId));
     }
 
     // Client authentifié seulement: créer un avis
@@ -35,11 +44,37 @@ public class ServiceReviewController {
             @PathVariable Long serviceId,
             @RequestBody ServiceReviewDto dto) {
         try {
-            ServiceReviewDto createdReview = reviewService.createServiceReview(firebaseUser.getUid(), serviceId, dto);
+            // ▼▼▼ CORRECTION : On utilise la bonne variable 'serviceReviewService' ▼▼▼
+            ServiceReviewDto createdReview = serviceReviewService.createServiceReview(firebaseUser.getUid(), serviceId, dto);
             return new ResponseEntity<>(createdReview, HttpStatus.CREATED);
         } catch (IllegalStateException e) {
-            // Gérer le cas où l'utilisateur n'a pas le droit de laisser un avis
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(e.getMessage());
+        }
+    }
+
+    @DeleteMapping("/{id}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Void> deleteServiceReview(
+            @AuthenticationPrincipal FirebaseUser firebaseUser,
+            @PathVariable Long id) {
+        try {
+            // Le reste du code était déjà correct et utilisait 'serviceReviewService'
+            ServiceReviewDto existingReview = serviceReviewService.getReviewById(id)
+                    .orElseThrow(() -> new RuntimeException("Service review not found with ID: " + id));
+
+            boolean isAdmin = firebaseUser.getRole().name().equals("ADMIN");
+
+            User reviewOwner = userRepository.findById(existingReview.getUserId())
+                    .orElseThrow(() -> new RuntimeException("Review owner not found"));
+
+            if (!isAdmin && !reviewOwner.getUid().equals(firebaseUser.getUid())) {
+                return new ResponseEntity<>(HttpStatus.FORBIDDEN);
+            }
+
+            serviceReviewService.deleteReview(id);
+            return ResponseEntity.noContent().build();
+        } catch (RuntimeException e) {
+            return ResponseEntity.notFound().build();
         }
     }
 }

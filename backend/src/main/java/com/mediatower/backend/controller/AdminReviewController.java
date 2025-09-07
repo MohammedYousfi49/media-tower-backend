@@ -1,38 +1,47 @@
-// Fichier : src/main/java/com/mediatower/backend/controller/AdminReviewController.java (NOUVEAU FICHIER)
-
 package com.mediatower.backend.controller;
 
 import com.mediatower.backend.dto.AdminReviewDto;
 import com.mediatower.backend.service.AdminReviewService;
+import com.mediatower.backend.service.ReviewService;
+import com.mediatower.backend.service.ServiceReviewService;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
-
 @RestController
 @RequestMapping("/api/admin/reviews")
-@PreAuthorize("hasRole('ADMIN')") // Sécurise toutes les actions pour les administrateurs
+@PreAuthorize("hasRole('ADMIN')")
 public class AdminReviewController {
 
     private final AdminReviewService adminReviewService;
+    private final ReviewService productReviewService;
+    private final ServiceReviewService serviceReviewService;
 
-    public AdminReviewController(AdminReviewService adminReviewService) {
+    public AdminReviewController(AdminReviewService adminReviewService, ReviewService productReviewService, ServiceReviewService serviceReviewService) {
         this.adminReviewService = adminReviewService;
+        this.productReviewService = productReviewService;
+        this.serviceReviewService = serviceReviewService;
     }
 
     @GetMapping
-    public ResponseEntity<List<AdminReviewDto>> getAllReviews() {
-        return ResponseEntity.ok(adminReviewService.getAllReviewsUnified());
+    public ResponseEntity<Page<AdminReviewDto>> getAllReviews(
+            @RequestParam(required = false) String search,
+            Pageable pageable) {
+        Page<AdminReviewDto> reviews = adminReviewService.getAllReviews(search, pageable);
+        return ResponseEntity.ok(reviews);
     }
 
-    @DeleteMapping("/{type}/{id}")
-    public ResponseEntity<Void> deleteReview(@PathVariable String type, @PathVariable Long id) {
-        try {
-            adminReviewService.deleteReview(type, id);
-            return ResponseEntity.noContent().build();
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().build();
-        }
+    @DeleteMapping("/product/{id}")
+    public ResponseEntity<Void> deleteProductReview(@PathVariable Long id) {
+        productReviewService.deleteReview(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/service/{id}")
+    public ResponseEntity<Void> deleteServiceReview(@PathVariable Long id) {
+        serviceReviewService.deleteReview(id);
+        return ResponseEntity.noContent().build();
     }
 }

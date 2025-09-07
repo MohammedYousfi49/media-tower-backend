@@ -4,6 +4,8 @@ import com.mediatower.backend.dto.MediaDto;
 import com.mediatower.backend.dto.ProductDto;
 import com.mediatower.backend.model.*;
 import com.mediatower.backend.repository.*;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,23 +22,48 @@ public class ProductService {
     private final TagRepository tagRepository;
     private final MediaRepository mediaRepository;
     private final OrderRepository orderRepository;
+    private final S3Service s3Service; // Assurez-vous d'injecter S3Service
+    private final UserProductAccessRepository userProductAccessRepository;
 
-    public ProductService(ProductRepository productRepository, CategoryRepository categoryRepository, OrderItemRepository orderItemRepository, TagRepository tagRepository, MediaRepository mediaRepository, OrderRepository orderRepository) {
+    public ProductService(ProductRepository productRepository, CategoryRepository categoryRepository, OrderItemRepository orderItemRepository, TagRepository tagRepository, MediaRepository mediaRepository, OrderRepository orderRepository, S3Service s3Service, UserProductAccessRepository userProductAccessRepository) {
         this.productRepository = productRepository;
         this.categoryRepository = categoryRepository;
         this.orderItemRepository = orderItemRepository;
         this.tagRepository = tagRepository;
         this.mediaRepository = mediaRepository;
         this.orderRepository = orderRepository;
+        this.s3Service = s3Service;
+        this.userProductAccessRepository = userProductAccessRepository;
     }
 
-    public List<ProductDto> getAllProducts() {
-        return productRepository.findAll().stream().map(this::convertToDto).collect(Collectors.toList());
+    public Page<ProductDto> getAllProductsPaginated(String searchTerm, Long categoryId, String stockStatus, Pageable pageable) {
+        // Normalisation des filtres pour la requête
+        String search = (searchTerm == null || searchTerm.trim().isEmpty()) ? null : searchTerm;
+        Long catId = (categoryId != null && categoryId == 0) ? null : categoryId; // On considère 0 comme 'all'
+        String stock = (stockStatus == null || stockStatus.equals("all")) ? null : stockStatus;
+
+        Page<Product> productPage = productRepository.findWithFilters(search, catId, stock, pageable);
+        return productPage.map(this::convertToDto);
     }
+
 
     public Optional<ProductDto> getProductById(Long id) {
         return productRepository.findById(id).map(this::convertToDto);
+
     }
+
+//
+public List<ProductDto> getAllProductsForSelection() {
+    return productRepository.findAll().stream()
+            .map(product -> {
+                ProductDto dto = new ProductDto();
+                dto.setId(product.getId());
+                dto.setNames(product.getNames());
+                dto.setPrice(product.getPrice());
+                return dto;
+            })
+            .collect(Collectors.toList());
+}
 
     @Transactional
     public ProductDto createProduct(ProductDto dto) {
@@ -141,5 +168,25 @@ public class ProductService {
         mediaDto.setUrl(baseUrl + media.getFileName());
         mediaDto.setPrimary(media.isPrimary());
         return mediaDto;
+    }
+    @Transactional(readOnly = true)
+    public String generatePresignedDownloadLink(Long productId, String userUid) {
+        // 1. ▼▼▼ CORRECTION DU NOM DE LA MÉTHODE ▼▼▼
+        // La méthode correcte est 'existsByUserUidAndProductId'
+        boolean hasAccess = userProductAccessRepository.existsByUserUidAndProductId(userUid, productId);
+        if (!hasAccess) {
+            throw new SecurityException("User does not have access to this product.");
+        }
+
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new RuntimeException("Product not found"));
+
+        if (product.getS3ObjectKey() == null || product.getS3ObjectKey().isBlank()) {
+            throw new RuntimeException("This product has no downloadable file.");
+        }
+
+        // 2. ▼▼▼ CORRECTION DU NOM DE LA MÉTHODE S3 ▼▼▼
+        // La méthode correcte dans votre S3Service est 'generatePresignedDownloadUrl'
+        return s3Service.generatePresignedDownloadUrl(product.getS3ObjectKey()).toString();
     }
 }

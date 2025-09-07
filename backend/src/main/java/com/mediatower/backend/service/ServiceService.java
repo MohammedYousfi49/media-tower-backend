@@ -1,4 +1,4 @@
-// Fichier : src/main/java/com/mediatower/backend/service/ServiceService.java (COMPLET ET FINAL)
+// Fichier : src/main/java/com/mediatower/backend/service/ServiceService.java (COMPLET ET CORRIGÉ)
 
 package com.mediatower.backend.service;
 
@@ -7,9 +7,14 @@ import com.mediatower.backend.dto.ServiceDto;
 import com.mediatower.backend.model.Media;
 import com.mediatower.backend.model.MediaType;
 import com.mediatower.backend.model.Service;
+import com.mediatower.backend.repository.BookingRepository;
+import com.mediatower.backend.repository.MediaRepository;
 import com.mediatower.backend.repository.ServiceRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Optional;
@@ -19,33 +24,83 @@ import java.util.stream.Collectors;
 public class ServiceService {
 
     private final ServiceRepository serviceRepository;
+    private final BookingRepository bookingRepository;
+    private final FileStorageService fileStorageService;
+    private final MediaRepository mediaRepository;
+
     private final String baseUrl = "http://localhost:8080/api/download/";
 
-    public ServiceService(ServiceRepository serviceRepository) {
+    public ServiceService(ServiceRepository serviceRepository, BookingRepository bookingRepository, FileStorageService fileStorageService, MediaRepository mediaRepository) {
         this.serviceRepository = serviceRepository;
+        this.bookingRepository = bookingRepository;
+        this.fileStorageService = fileStorageService;
+        this.mediaRepository = mediaRepository;
     }
 
-    public List<ServiceDto> getAllServices() {
-        return serviceRepository.findAll().stream().map(this::convertToDto).collect(Collectors.toList());
+    public Page<ServiceDto> getAllServicesPaginated(String searchTerm, Pageable pageable) {
+        String search = (searchTerm == null || searchTerm.trim().isEmpty()) ? null : searchTerm;
+        Page<Service> servicePage = serviceRepository.findBySearchTerm(search, pageable);
+        return servicePage.map(this::convertToDto);
     }
 
     public Optional<ServiceDto> getServiceById(Long id) {
         return serviceRepository.findById(id).map(this::convertToDto);
     }
 
-    @Transactional
-    public ServiceDto createService(ServiceDto serviceDto) {
-        Service service = new Service();
-        updateServiceFromDto(service, serviceDto);
-        return convertToDto(serviceRepository.save(service));
+    // CORRECTION: Méthode pour admin - sélection simplifiée
+    public List<ServiceDto> getAllServicesForSelection() {
+        return serviceRepository.findAll().stream()
+                .map(service -> {
+                    ServiceDto dto = new ServiceDto();
+                    dto.setId(service.getId());
+                    dto.setNames(service.getNames());
+                    dto.setPrice(service.getPrice());
+                    return dto;
+                })
+                .collect(Collectors.toList());
     }
 
     @Transactional
-    public ServiceDto updateService(Long id, ServiceDto serviceDto) {
+    public ServiceDto createService(ServiceDto serviceDto, List<MultipartFile> images) {
+        Service service = new Service();
+        updateServiceFromDto(service, serviceDto);
+
+        Service savedService = serviceRepository.save(service);
+
+        associateMedia(savedService, images);
+
+        return convertToDto(savedService);
+    }
+
+    @Transactional
+    public ServiceDto updateService(Long id, ServiceDto serviceDto, List<MultipartFile> images) {
         Service service = serviceRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Service not found with id: " + id));
         updateServiceFromDto(service, serviceDto);
+
+        associateMedia(service, images);
+
         return convertToDto(serviceRepository.save(service));
+    }
+
+    private void associateMedia(Service service, List<MultipartFile> images) {
+        if (images != null && !images.isEmpty()) {
+            boolean isFirstImage = service.getMediaAssets().stream().noneMatch(Media::isPrimary);
+            for (MultipartFile file : images) {
+                String fileName = fileStorageService.storeFile(file);
+                Media media = new Media();
+                media.setFileName(fileName);
+                media.setOriginalName(file.getOriginalFilename());
+                media.setType(MediaType.IMAGE);
+                media.setService(service);
+                if (isFirstImage) {
+                    media.setPrimary(true);
+                    isFirstImage = false;
+                }
+                mediaRepository.save(media);
+                service.getMediaAssets().add(media);
+            }
+        }
     }
 
     private void updateServiceFromDto(Service service, ServiceDto dto) {
@@ -71,6 +126,7 @@ public class ServiceService {
         dto.setNames(service.getNames());
         dto.setDescriptions(service.getDescriptions());
         dto.setPrice(service.getPrice());
+        dto.setBookingCount(bookingRepository.countByServiceId(service.getId()));
 
         if (service.getMediaAssets() != null) {
             dto.setImages(service.getMediaAssets().stream()

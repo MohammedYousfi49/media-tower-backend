@@ -1,8 +1,10 @@
 // Fichier : src/main/java/com/mediatower/backend/model/Promotion.java (COMPLET ET MIS À JOUR)
 
 package com.mediatower.backend.model;
+
 import jakarta.persistence.*;
 import lombok.Data;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.HashSet;

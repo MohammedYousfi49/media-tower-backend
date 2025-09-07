@@ -4,6 +4,8 @@ import com.mediatower.backend.dto.BookingDto;
 import com.mediatower.backend.model.BookingStatus;
 import com.mediatower.backend.security.FirebaseUser;
 import com.mediatower.backend.service.BookingService;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -23,17 +25,25 @@ public class BookingController {
         this.bookingService = bookingService;
     }
 
-    @GetMapping
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<List<BookingDto>> getAllBookings() {
-        return ResponseEntity.ok(bookingService.getAllBookings());
-    }
+
 
     @GetMapping("/me")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<BookingDto>> getMyBookings(@AuthenticationPrincipal FirebaseUser firebaseUser) {
         List<BookingDto> userBookings = bookingService.getBookingsByUserId(firebaseUser.getUid());
         return ResponseEntity.ok(userBookings);
+    }
+    @GetMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Page<BookingDto>> getAllBookings(
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false, defaultValue = "ALL") String filter,
+            @AuthenticationPrincipal FirebaseUser adminUser,
+            Pageable pageable) {
+
+        // CORRECTION : On passe maintenant le getUid() au lieu de getId()
+        Page<BookingDto> bookings = bookingService.getAllBookingsPaginated(search, filter, adminUser.getUid(), pageable);
+        return ResponseEntity.ok(bookings);
     }
 
     // --- NOUVEL ENDPOINT POUR LA PAGE DE CHECKOUT ---

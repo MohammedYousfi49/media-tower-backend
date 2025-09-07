@@ -57,7 +57,8 @@ public class UserProductController {
         return ResponseEntity.ok(products);
     }
 
-    @GetMapping("/products/{productId}/download-link")
+    // CORRECTION : Changer l'URL pour correspondre au frontend
+    @GetMapping("/user/products/{productId}/download-link")
     @PreAuthorize("isAuthenticated()")
     @Transactional
     public ResponseEntity<?> getDownloadLink(@PathVariable Long productId, @AuthenticationPrincipal FirebaseUser firebaseUser) {
@@ -88,15 +89,13 @@ public class UserProductController {
     private UserProductDto convertToUserProductDto(UserProductAccess access) {
         Product product = access.getProduct();
 
-        // ================== CORRECTION DE L'IMAGE MANQUANTE ==================
-        // On construit l'URL de la même manière que dans ProductService pour la cohérence
         String baseUrl = "http://localhost:8080/api/download/";
         String thumbnailUrl = product.getMediaAssets().stream()
                 .filter(media -> media.getType() == MediaType.IMAGE && media.isPrimary())
                 .findFirst()
-                .map(media -> baseUrl + media.getFileName()) // On utilise la construction manuelle
+                .map(media -> baseUrl + media.getFileName())
                 .orElse(null);
-        // S'il n'y a pas d'image primaire, on prend la première de la liste
+
         if (thumbnailUrl == null && product.getMediaAssets() != null && !product.getMediaAssets().isEmpty()) {
             thumbnailUrl = product.getMediaAssets().stream()
                     .filter(media -> media.getType() == MediaType.IMAGE)
@@ -104,7 +103,6 @@ public class UserProductController {
                     .map(media -> baseUrl + media.getFileName())
                     .orElse(null);
         }
-        // ===================================================================
 
         return new UserProductDto(
                 product.getId(),

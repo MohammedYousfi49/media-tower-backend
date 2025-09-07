@@ -113,6 +113,7 @@ public class EmailService {
         }
     }
 
+
     // --- E-MAILS TEXTE (AMÉLIORÉS) ---
     @Async
     public void sendBookingRequestedEmail(String customerName, String customerEmail, String serviceName) {
@@ -171,7 +172,7 @@ public class EmailService {
 
     // --- MÉTHODES UTILITAIRES POUR L'ENVOI ---
     @Async
-    private void sendHtmlEmail(String to, String subject, String htmlContent) throws MessagingException {
+    public void sendHtmlEmail(String to, String subject, String htmlContent) throws MessagingException {
         MimeMessage mimeMessage = mailSender.createMimeMessage();
         MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, MimeMessageHelper.MULTIPART_MODE_MIXED_RELATED, StandardCharsets.UTF_8.name());
         helper.setSubject(subject);
@@ -182,7 +183,7 @@ public class EmailService {
     }
 
     @Async
-    private void sendSimpleTextEmail(String to, String subject, String text) {
+    public void sendSimpleTextEmail(String to, String subject, String text) {
         SimpleMailMessage message = new SimpleMailMessage();
         message.setFrom(fromEmail);
         message.setTo(to);
@@ -306,6 +307,29 @@ public class EmailService {
             // logger.error("Failed to send new device login alert email to {}", to, e);
         }
     }
+    @Async
+    public void sendNewLocationLoginAlertEmail(String to, String userName, String loginTime, String ipAddress, String userAgent) {
+        try {
+            Context context = new Context();
+            context.setVariable("userName", userName);
+            context.setVariable("loginTime", loginTime);
+            context.setVariable("ipAddress", ipAddress);
+            context.setVariable("userAgent", userAgent);
+
+            String htmlContent = templateEngine.process("NewLocationLoginAlertTemplate", context);
+
+            MimeMessage mimeMessage = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, "UTF-8");
+
+            helper.setTo(to);
+            helper.setSubject("Alerte de Sécurité : Connexion depuis une nouvelle localisation");
+            helper.setText(htmlContent, true);
+
+            mailSender.send(mimeMessage);
+
+        } catch (MessagingException e) {
+            logger.error("Failed to send new location login alert email to {}", to, e);
+        }
 
 
-}
+    }}

@@ -1,10 +1,14 @@
+// Fichier : src/main/java/com/mediatower/backend/controller/PromotionController.java (COMPLET ET SIMPLIFIÉ)
+
 package com.mediatower.backend.controller;
 
 import com.mediatower.backend.dto.PromotionDto;
+import com.mediatower.backend.dto.ValidatePromoCodeRequest;
 import com.mediatower.backend.service.PromotionService;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
+// L'import @PreAuthorize a été retiré.
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -19,43 +23,39 @@ public class PromotionController {
         this.promotionService = promotionService;
     }
 
-    // Admin: récupérer toutes les promotions
+    // Sécurité gérée par SecurityConfig
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<PromotionDto>> getAllPromotions() {
         return ResponseEntity.ok(promotionService.getAllPromotions());
     }
 
-    // Admin: créer une nouvelle promotion
+    // Sécurité gérée par SecurityConfig
     @PostMapping
-    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<PromotionDto> createPromotion(@RequestBody PromotionDto dto) {
-        // La méthode du service gère à la fois la création et la mise à jour,
-        // donc on s'assure que l'ID est nul pour une création.
         dto.setId(null);
         PromotionDto createdPromotion = promotionService.createOrUpdatePromotion(dto);
         return new ResponseEntity<>(createdPromotion, HttpStatus.CREATED);
     }
 
-    // Admin: mettre à jour une promotion existante
+    // Public (sécurité gérée par SecurityConfig)
+    @PostMapping("/validate")
+    public ResponseEntity<PromotionDto> validatePromotionCode(@Valid @RequestBody ValidatePromoCodeRequest request) {
+        PromotionDto validPromotion = promotionService.validatePromotionCode(request.getCode());
+        return ResponseEntity.ok(validPromotion);
+    }
+
+    // Sécurité gérée par SecurityConfig
     @PutMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<PromotionDto> updatePromotion(@PathVariable Long id, @RequestBody PromotionDto dto) {
-        dto.setId(id); // On assigne l'ID de l'URL au DTO pour la mise à jour
+        dto.setId(id);
         PromotionDto updatedPromotion = promotionService.createOrUpdatePromotion(dto);
         return ResponseEntity.ok(updatedPromotion);
     }
 
-    // Admin: supprimer une promotion
+    // Sécurité gérée par SecurityConfig
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> deletePromotion(@PathVariable Long id) {
-        try {
-            promotionService.deletePromotion(id);
-            return ResponseEntity.noContent().build();
-        } catch (Exception e) {
-            // Gérer le cas où la promotion n'existe pas (par exemple)
-            return ResponseEntity.notFound().build();
-        }
+        promotionService.deletePromotion(id);
+        return ResponseEntity.noContent().build();
     }
 }

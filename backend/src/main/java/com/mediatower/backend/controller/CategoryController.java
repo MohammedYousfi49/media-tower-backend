@@ -3,6 +3,8 @@ package com.mediatower.backend.controller;
 import com.mediatower.backend.dto.CategoryDto;
 import com.mediatower.backend.service.CategoryService;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -19,10 +21,14 @@ public class CategoryController {
         this.categoryService = categoryService;
     }
 
-    @GetMapping
-    public List<CategoryDto> getAllCategories() {
-        return categoryService.getAllCategories();
-    }
+//    @GetMapping
+//    public List<CategoryDto> getAllCategories() {
+//        return categoryService.getAllCategories();
+@GetMapping("/all")
+public List<CategoryDto> getAllCategoriesList() {
+    return categoryService.getAllCategoriesList();
+}
+//    }
 
     @GetMapping("/{id}")
     public ResponseEntity<CategoryDto> getCategoryById(@PathVariable Long id) {
@@ -68,5 +74,12 @@ public class CategoryController {
         } catch (RuntimeException e) {
             return ResponseEntity.notFound().build();
         }
+    }
+    @GetMapping
+    public ResponseEntity<Page<CategoryDto>> getAllCategories(
+            @RequestParam(required = false, defaultValue = "") String search,
+            Pageable pageable) {
+        Page<CategoryDto> categories = categoryService.getAllCategoriesPaginated(search, pageable);
+        return ResponseEntity.ok(categories);
     }
 }

@@ -6,6 +6,9 @@ import com.mediatower.backend.repository.BookingRepository;
 import com.mediatower.backend.repository.ServiceRepository;
 import com.mediatower.backend.repository.UserRepository;
 import jakarta.persistence.EntityNotFoundException;
+import org.springframework.data.domain.Pageable;
+
+import org.springframework.data.domain.Page;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -115,8 +118,23 @@ public class BookingService {
         return convertToDto(savedBooking);
     }
 
-    public List<BookingDto> getAllBookings() {
-        return bookingRepository.findAll().stream().map(this::convertToDto).collect(Collectors.toList());
+    @Transactional(readOnly = true)
+    public Page<BookingDto> getAllBookingsPaginated(String search, String filter, String adminUid, Pageable pageable) {
+        String searchTerm = (search == null || search.trim().isEmpty()) ? null : search;
+        BookingStatus statusFilter = null;
+        Long adminIdFilter = null;
+
+        if ("NEW".equals(filter)) {
+            statusFilter = BookingStatus.PENDING;
+        } else if ("MY_QUEUE".equals(filter) && adminUid != null) {
+            // C'est ici que nous convertissons l'UID en ID de base de données
+            adminIdFilter = userRepository.findByUid(adminUid)
+                    .map(User::getId)
+                    .orElse(-1L); // Utilise -1L pour ne jamais rien trouver si l'admin n'existe pas
+        }
+
+        Page<Booking> bookingPage = bookingRepository.findWithFilters(searchTerm, statusFilter, adminIdFilter, pageable);
+        return bookingPage.map(this::convertToDto);
     }
 
     @Transactional

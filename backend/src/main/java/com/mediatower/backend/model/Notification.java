@@ -37,6 +37,8 @@ public class Notification {
     private boolean read;
 
     private LocalDateTime createdAt;
+    @Column(length = 255) // On peut définir une longueur
+    private String link;
 
     @PrePersist
     protected void onCreate() {

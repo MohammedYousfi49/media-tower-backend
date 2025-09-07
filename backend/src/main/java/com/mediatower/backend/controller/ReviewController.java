@@ -1,7 +1,10 @@
 package com.mediatower.backend.controller;
 
 import com.mediatower.backend.dto.ReviewDto;
+import com.mediatower.backend.model.User;
 import com.mediatower.backend.security.FirebaseUser;
+import com.mediatower.backend.repository.UserRepository;
+
 import com.mediatower.backend.service.ReviewService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -15,9 +18,12 @@ import java.util.List;
 @RequestMapping("/api/reviews")
 public class ReviewController {
     private final ReviewService reviewService;
+    private final UserRepository userRepository;
 
-    public ReviewController(ReviewService reviewService) {
+
+    public ReviewController(ReviewService reviewService, UserRepository userRepository) {
         this.reviewService = reviewService;
+        this.userRepository = userRepository;
     }
 
     @GetMapping
@@ -70,7 +76,7 @@ public class ReviewController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("isAuthenticated()") // La vérification de la propriété se fait dans la méthode
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Void> deleteReview(
             @AuthenticationPrincipal FirebaseUser firebaseUser,
             @PathVariable Long id) {
@@ -78,8 +84,13 @@ public class ReviewController {
             ReviewDto existingReview = reviewService.getReviewById(id)
                     .orElseThrow(() -> new RuntimeException("Review not found with ID: " + id));
 
-            // --- CORRECTION ICI (et simplification) ---
-            if (!firebaseUser.getRole().name().equals("ADMIN") && !existingReview.getUserId().toString().equals(firebaseUser.getUid())) {
+            boolean isAdmin = firebaseUser.getRole().name().equals("ADMIN");
+
+            // Le code utilise déjà userRepository, il fallait juste l'injecter.
+            User reviewOwner = userRepository.findById(existingReview.getUserId())
+                    .orElseThrow(() -> new RuntimeException("Review owner not found"));
+
+            if (!isAdmin && !reviewOwner.getUid().equals(firebaseUser.getUid())) {
                 return new ResponseEntity<>(HttpStatus.FORBIDDEN);
             }
             reviewService.deleteReview(id);

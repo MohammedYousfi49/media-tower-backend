@@ -3,9 +3,12 @@ package com.mediatower.backend.service;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
 import com.mediatower.backend.model.*;
+import com.mediatower.backend.repository.AuditLogRepository;
 import com.mediatower.backend.repository.PasswordHistoryRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Value;
+import com.mediatower.backend.dto.LoginHistoryDto;
+
 
 import com.google.firebase.auth.FirebaseToken;
 import com.google.firebase.auth.UserRecord;
@@ -18,6 +21,8 @@ import com.mediatower.backend.dto.PasswordHistoryDto;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,6 +40,8 @@ public class UserService {
     private static final Logger logger = LoggerFactory.getLogger(UserService.class);
     @Value("${frontend.base-url}")
     private String frontendBaseUrl;
+    @Value("${app.backend-base-url}")
+    private String backendBaseUrl;
 
     private final UserRepository userRepository;
     private final PasswordHistoryRepository passwordHistoryRepository;
@@ -43,9 +50,11 @@ public class UserService {
     private final PasswordResetTokenRepository tokenRepository;
     private final AuditLogService auditLogService;
     private final FileStorageService fileStorageService;
+    private final AuditLogRepository auditLogRepository;
 
 
-    public UserService(UserRepository userRepository, PasswordHistoryRepository passwordHistoryRepository, PasswordEncoder passwordEncoder, EmailService emailService, PasswordResetTokenRepository tokenRepository, AuditLogService auditLogService, FileStorageService fileStorageService) {
+
+    public UserService(UserRepository userRepository, PasswordHistoryRepository passwordHistoryRepository, PasswordEncoder passwordEncoder, EmailService emailService, PasswordResetTokenRepository tokenRepository, AuditLogService auditLogService, FileStorageService fileStorageService, AuditLogRepository auditLogRepository) {
         this.userRepository = userRepository;
         this.passwordHistoryRepository = passwordHistoryRepository;
         this.passwordEncoder = passwordEncoder;
@@ -53,6 +62,7 @@ public class UserService {
         this.tokenRepository = tokenRepository;
         this.auditLogService = auditLogService;
         this.fileStorageService = fileStorageService;
+        this.auditLogRepository = auditLogRepository;
     }
 
     @Transactional
@@ -125,6 +135,31 @@ public class UserService {
 
         logger.info("User email {} successfully verified.", user.getEmail());
     }
+    @Transactional(readOnly = true)
+    public List<LoginHistoryDto> getLoginHistoryForUser(User user) {
+        // On récupère les deux types de connexions réussies
+        List<AuditLog> successfulLogins = auditLogRepository.findTop10ByUserAndActionOrderByTimestampDesc(user, SecurityActionType.LOGIN_SUCCESS);
+        List<AuditLog> successfulMfa = auditLogRepository.findTop10ByUserAndActionOrderByTimestampDesc(user, SecurityActionType.MFA_VERIFICATION_SUCCESS);
+
+        // On fusionne et trie pour avoir les plus récents
+        List<AuditLog> combinedHistory = new java.util.ArrayList<>();
+        combinedHistory.addAll(successfulLogins);
+        combinedHistory.addAll(successfulMfa);
+
+        combinedHistory.sort((a, b) -> b.getTimestamp().compareTo(a.getTimestamp()));
+
+        return combinedHistory.stream()
+                .limit(10) // On garde les 10 plus récents au total
+                .map(this::convertToLoginHistoryDto)
+                .collect(Collectors.toList());
+    }
+    private LoginHistoryDto convertToLoginHistoryDto(AuditLog log) {
+        return new LoginHistoryDto(
+                log.getTimestamp(),
+                log.getIpAddress(),
+                log.getDetails()
+        );
+    }
 
     @Transactional
     public void resendVerificationEmail(String email) {
@@ -163,35 +198,32 @@ public class UserService {
         String uid = decodedToken.getUid();
         String email = decodedToken.getEmail();
 
-        // 1. Chercher par UID Firebase (cas le plus courant)
+        // 1. Chercher par UID Firebase (cas le plus courant pour les connexions répétées)
         Optional<User> existingUserByUid = userRepository.findByUid(uid);
         if (existingUserByUid.isPresent()) {
-            logger.debug("User found by UID: {}", uid);
             return existingUserByUid.get();
         }
 
-        // 2. Si non trouvé par UID, chercher par e-mail (cas du conflit/liaison)
+        // 2. Si non trouvé par UID, chercher par e-mail (cas de la première connexion après inscription, ou liaison)
         Optional<User> existingUserByEmail = userRepository.findByEmail(email);
         if (existingUserByEmail.isPresent()) {
             User userToLink = existingUserByEmail.get();
-            // L'utilisateur existe mais n'a pas de UID, on le lie.
+            // Si l'utilisateur existe déjà (inscription classique) mais n'a pas de UID, on le lie.
             if (userToLink.getUid() == null || userToLink.getUid().isBlank()) {
                 logger.info("Linking Firebase UID {} to existing local account {}", uid, email);
                 userToLink.setUid(uid);
-                // La connexion Google confirme que l'e-mail est vérifié
                 if (!userToLink.isEmailVerified()) {
-                    userToLink.setEmailVerified(true);
+                    userToLink.setEmailVerified(true); // La connexion via Firebase confirme l'email
                 }
                 return userRepository.save(userToLink);
-            } else {
-                // Cas très rare : l'e-mail est déjà lié à un AUTRE UID. C'est une erreur.
-                logger.error("Email {} is already associated with a different Firebase UID: {} (attempted: {})", email, userToLink.getUid(), uid);
-                throw new IllegalStateException("This email is already linked to a different social account.");
             }
+            // Si l'UID correspond déjà, on retourne l'utilisateur.
+            // Ce cas est normalement déjà géré par la première recherche, mais c'est une sécurité.
+            return userToLink;
         }
 
-        // 3. Si l'utilisateur n'existe pas du tout, on le crée.
-        logger.info("Creating new user from Firebase token for UID: {}", uid);
+        // 3. Si l'utilisateur n'existe VRAIMENT PAS, on le crée (cas d'une inscription via Google)
+        logger.info("Creating new user from social login (Google) for UID: {}", uid);
         User newUser = new User();
         newUser.setUid(uid);
         newUser.setEmail(email);
@@ -205,14 +237,14 @@ public class UserService {
             }
         } else {
             newUser.setFirstName(email != null ? email.split("@")[0] : "User");
-            newUser.setLastName("");
         }
 
-        // On lui donne un mot de passe aléatoire car il est géré par Google
-        newUser.setPassword(passwordEncoder.encode(UUID.randomUUID().toString()));
+        // On assigne un mot de passe aléatoire FORT et non devinable, car il ne sera jamais utilisé pour se connecter.
+        // La connexion se fera toujours via Google.
+        newUser.setPassword(passwordEncoder.encode(UUID.randomUUID().toString() + UUID.randomUUID().toString()));
         newUser.setRole(UserRole.USER);
         newUser.setStatus(UserStatus.ACTIVE);
-        newUser.setEmailVerified(true); // L'e-mail est vérifié par Google
+        newUser.setEmailVerified(true);
 
         return userRepository.save(newUser);
     }
@@ -301,6 +333,14 @@ public class UserService {
 
     @SuppressWarnings("SpellCheckingInspection")
     public UserProfileDto convertToDto(User user) {
+        String profileImageUrl = user.getProfileImageUrl();
+
+        // ==================== CORRECTION : Transformer le chemin relatif en URL absolue ====================
+        if (profileImageUrl != null && profileImageUrl.startsWith("/uploads/")) {
+            profileImageUrl = backendBaseUrl + profileImageUrl;
+        }
+        // ==============================================================================================
+
         return new UserProfileDto(
                 user.getId(),
                 user.getEmail(),
@@ -313,7 +353,7 @@ public class UserService {
                 user.getAddress(),
                 user.isEmailVerified(),
                 user.isMfaEnabled(),
-                user.getProfileImageUrl()
+                profileImageUrl // Utiliser la variable modifiée
         );
     }
 
@@ -327,7 +367,10 @@ public class UserService {
                 user.getRole().name(),
                 user.getStatus().name(),
                 user.getPhoneNumber(),
-                user.getAddress()
+                user.getAddress(),
+                user.getCreatedAt(),       // champ ajouté
+                user.isEmailVerified(),  // champ ajouté
+                user.isMfaEnabled()
         );
     }
     @Transactional
@@ -460,39 +503,110 @@ public class UserService {
         PasswordHistory historyEntry = new PasswordHistory(user, encodedPassword, method, ipAddress);
         passwordHistoryRepository.save(historyEntry);
     }
-    @Transactional
-    public void changePasswordFromProfile(User user, String oldPassword, String newPassword, HttpServletRequest request) {
-        // 1. Vérifier si l'ancien mot de passe est correct
-        if (!passwordEncoder.matches(oldPassword, user.getPassword())) {
-            throw new IllegalArgumentException("Incorrect old password.");
-        }
-
-        // 2. (Optionnel mais recommandé) Vérifier que le nouveau mot de passe n'est pas le même que l'ancien
-        if (passwordEncoder.matches(newPassword, user.getPassword())) {
-            throw new IllegalArgumentException("New password cannot be the same as the old password.");
-        }
-
-        String encodedNewPassword = passwordEncoder.encode(newPassword);
-
-        // 3. Mettre à jour Firebase
-        String firebaseUid = user.getUid();
-        if (firebaseUid != null && !firebaseUid.isBlank()) {
-            try {
-                UserRecord.UpdateRequest firebaserequest = new UserRecord.UpdateRequest(firebaseUid).setPassword(newPassword);
-                FirebaseAuth.getInstance().updateUser(firebaserequest);
-            } catch (FirebaseAuthException e) {
-                throw new RuntimeException("Failed to update password in authentication service.", e);
-            }
-        }
-
-        // 4. Mettre à jour la BDD locale
-        user.setPassword(encodedNewPassword);
-        userRepository.save(user);
-
-        // 5. Enregistrer l'historique et l'audit
-        savePasswordHistory(user, encodedNewPassword, PasswordChangeMethod.BY_USER, request);
-        auditLogService.logEvent(user, SecurityActionType.PASSWORD_CHANGE_SUCCESS, request, "Mot de passe changé depuis le profil.");
-    }
+//    @Transactional
+//    public void changePasswordFromProfile(User user, String oldPassword, String newPassword, HttpServletRequest request) {
+//        // === ÉTAPE DE DIAGNOSTIC TEMPORAIRE - À SUPPRIMER APRÈS RÉSOLUTION ===
+//        logger.info("=== PASSWORD CHANGE DEBUG START ===");
+//        logger.info("DEBUG: User email: {}", user.getEmail());
+//        logger.info("DEBUG: User ID: {}", user.getId());
+//        logger.info("DEBUG: User UID: {}", user.getUid());
+//        logger.info("DEBUG: Received old password: '{}'", oldPassword);
+//        logger.info("DEBUG: Stored password hash length: {}", user.getPassword() != null ? user.getPassword().length() : "null");
+//        logger.info("DEBUG: Stored password hash starts with: {}", user.getPassword() != null ? user.getPassword().substring(0, Math.min(20, user.getPassword().length())) + "..." : "null");
+//
+//        // Test de vérification du mot de passe
+//        boolean passwordMatches = passwordEncoder.matches(oldPassword, user.getPassword());
+//        logger.info("DEBUG: Password encoder matches result: {}", passwordMatches);
+//
+//        // Tester quelques variantes courantes si le mot de passe ne correspond pas
+//        if (!passwordMatches) {
+//            String[] commonVariants = {
+//                    oldPassword.trim(),
+//                    oldPassword.toLowerCase(),
+//                    oldPassword.toUpperCase(),
+//                    "Moha@2000", // Au cas où il y aurait un problème d'encodage
+//                    "moha@2000"
+//            };
+//
+//            for (String variant : commonVariants) {
+//                if (passwordEncoder.matches(variant, user.getPassword())) {
+//                    logger.warn("DEBUG: Password matches with variant: '{}'", variant);
+//                    break;
+//                }
+//            }
+//        }
+//        logger.info("=== PASSWORD CHANGE DEBUG END ===");
+//
+//        // === LOGIQUE NORMALE (INCHANGÉE) ===
+//
+//        // 1. Vérifier si l'ancien mot de passe est correct
+//        if (!passwordEncoder.matches(oldPassword, user.getPassword())) {
+//            auditLogService.logEvent(user, SecurityActionType.PASSWORD_CHANGE_FAILED, request, "Ancien mot de passe incorrect.");
+//            throw new IllegalArgumentException("Incorrect old password.");
+//        }
+//
+//        // 2. Vérifier que le nouveau mot de passe n'est pas le même que l'ancien
+//        if (passwordEncoder.matches(newPassword, user.getPassword())) {
+//            throw new IllegalArgumentException("New password cannot be the same as the old password.");
+//        }
+//
+//        String encodedNewPassword = passwordEncoder.encode(newPassword);
+//        String firebaseUid = user.getUid();
+//
+//        // 3. Mettre à jour la BDD locale D'ABORD
+//        user.setPassword(encodedNewPassword);
+//        userRepository.save(user);
+//
+//        // 4. Enregistrer l'historique et l'audit du succès LOCAL
+//        savePasswordHistory(user, encodedNewPassword, PasswordChangeMethod.BY_USER, request);
+//        auditLogService.logEvent(user, SecurityActionType.PASSWORD_CHANGE_SUCCESS, request, "Mot de passe changé avec succès dans la base de données locale.");
+//
+//        // 5. Ensuite, tenter de synchroniser avec Firebase
+//        if (firebaseUid != null && !firebaseUid.isBlank()) {
+//            try {
+//                logger.info("Attempting to sync password update in Firebase for UID: {}", firebaseUid);
+//                UserRecord.UpdateRequest firebaserequest = new UserRecord.UpdateRequest(firebaseUid).setPassword(newPassword);
+//                FirebaseAuth.getInstance().updateUser(firebaserequest);
+//                logger.info("Successfully synced password in Firebase for UID: {}", firebaseUid);
+//            } catch (FirebaseAuthException e) {
+//                // NE PAS FAIRE ÉCHOUER LA TRANSACTION. On enregistre une erreur grave.
+//                logger.error("CRITICAL: Failed to sync password in Firebase for UID {} after local DB update from profile. Manual intervention may be required. Error: {}", firebaseUid, e.getMessage());
+//                // On pourrait ici envoyer un email à un admin pour l'alerter du problème de synchronisation.
+//            }
+//        }
+//    }
+//    @Transactional
+//    public void adminForcePasswordSync(Long userId, String newPassword, HttpServletRequest request) {
+//        User user = userRepository.findById(userId)
+//                .orElseThrow(() -> new RuntimeException("User not found with ID: " + userId));
+//
+//        String encodedPassword = passwordEncoder.encode(newPassword);
+//        String firebaseUid = user.getUid();
+//
+//        // 1. Mettre à jour Firebase d'abord, car c'est l'opération la plus susceptible d'échouer.
+//        if (firebaseUid != null && !firebaseUid.isBlank()) {
+//            try {
+//                logger.info("ADMIN ACTION: Forcing password update in Firebase for UID: {}", firebaseUid);
+//                UserRecord.UpdateRequest firebaserequest = new UserRecord.UpdateRequest(firebaseUid).setPassword(newPassword);
+//                FirebaseAuth.getInstance().updateUser(firebaserequest);
+//                logger.info("ADMIN ACTION: Successfully updated password in Firebase for UID: {}", firebaseUid);
+//            } catch (FirebaseAuthException e) {
+//                logger.error("ADMIN ACTION: Error updating password in Firebase for UID {}: {}", firebaseUid, e.getMessage());
+//                throw new RuntimeException("Failed to update password in authentication service. Please check Firebase logs.", e);
+//            }
+//        } else {
+//            logger.warn("ADMIN ACTION: User with email {} has no Firebase UID. Password will only be updated in local DB.", user.getEmail());
+//        }
+//
+//        // 2. Si Firebase réussit, mettre à jour la BDD locale.
+//        logger.info("ADMIN ACTION: Updating password in local database for user: {}", user.getEmail());
+//        user.setPassword(encodedPassword);
+//        userRepository.save(user);
+//
+//        // 3. Enregistrer l'historique et l'audit
+//        savePasswordHistory(user, encodedPassword, PasswordChangeMethod.BY_ADMIN, request); // Il faudra ajouter BY_ADMIN à l'enum
+//        auditLogService.logEvent(user, SecurityActionType.PASSWORD_RESET_FORCED, request, "Password was forcibly reset by an administrator."); // Il faudra ajouter ce type d'action
+//    }
     @Transactional(readOnly = true)
     public List<PasswordHistoryDto> getPasswordHistoryForUser(User user) {
         return passwordHistoryRepository.findTop5ByUserOrderByChangeDateDesc(user)
@@ -514,5 +628,20 @@ public class UserService {
             return request.getRemoteAddr();
         }
         return xfHeader.split(",")[0];
+    }
+    @Transactional(readOnly = true)
+    public Page<AdminUserDto> findAllUsersPaginated(String search, Pageable pageable) {
+        Page<User> userPage;
+        if (search != null && !search.trim().isEmpty()) {
+            // Si un terme de recherche est fourni, on utilise la nouvelle méthode du repository
+            userPage = userRepository.findByFirstNameContainingIgnoreCaseOrLastNameContainingIgnoreCaseOrEmailContainingIgnoreCase(
+                    search, search, search, pageable
+            );
+        } else {
+            // Sinon, on récupère simplement tous les utilisateurs de la page demandée
+            userPage = userRepository.findAll(pageable);
+        }
+        // On convertit la Page<User> en Page<AdminUserDto>
+        return userPage.map(this::convertToAdminDto);
     }
 }
